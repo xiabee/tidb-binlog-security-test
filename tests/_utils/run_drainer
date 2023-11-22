@@ -1,0 +1,39 @@
+#!/bin/sh
+
+set -ue
+
+OUT_DIR=/tmp/tidb_binlog_test
+
+# kill drainer, util no drainer process is running
+while :
+do
+        drainer_num=`ps aux > temp && grep "drainer -log-file" temp | wc -l && rm temp`
+        if [ $drainer_num -ne 0 ]; then
+                killall drainer || true
+                sleep 1
+        else
+                break
+        fi
+done
+
+config=${TEST_DIR-.}/drainer.toml
+
+echo "[$(date)] <<<<<< START IN TEST ${TEST_NAME-} FOR: $config >>>>>>" >> "$OUT_DIR/drainer.log"
+
+if [ -f "$config" ]
+then
+    rm -f $OUT_DIR/drainer-config-tmp.toml
+    cp $config $OUT_DIR/drainer-config-tmp.toml
+fi
+
+    # Append the TLS config
+    cat - >> "$OUT_DIR/drainer-config-tmp.toml" <<EOF
+[security]
+ssl-ca = "$OUT_DIR/cert/ca.pem"
+ssl-cert = "$OUT_DIR/cert/drainer.pem"
+ssl-key = "$OUT_DIR/cert/drainer.key"
+cert-allowed-cn = ["binlog"]
+
+EOF
+
+    drainer -log-file $OUT_DIR/drainer.log -config "$OUT_DIR/drainer-config-tmp.toml" -pd-urls https://127.0.0.1:2379 -addr 0.0.0.0:8249 -advertise-addr 127.0.0.1:8249 -node-id drainer-id $* >> $OUT_DIR/drainer.log 2>&1

@@ -1,0 +1,35 @@
+# drainer meta data directory path
+data-dir = "/tmp/tidb_binlog_test/data.drainer"
+
+# a comma separated list of PD endpoints
+pd-urls = "http://127.0.0.1:2379"
+
+# syncer Configuration.
+[syncer]
+
+# disable sync these schema
+ignore-schemas = "INFORMATION_SCHEMA,PERFORMANCE_SCHEMA,mysql"
+
+# number of binlog events in a transaction batch
+txn-batch = 1
+
+# work count to execute binlogs
+worker-count = 1
+
+# safe mode will split update to delete and insert
+safe-mode = false
+
+# downstream storage, equal to --dest-db-type
+# valid values are "mysql", "file", "tidb", "kafka"
+db-type = "kafka"
+
+[syncer.to.checkpoint]
+#schema = "tidb_binlog"
+type = "mysql"
+host = "127.0.0.1"
+user = "root"
+password = ""
+port = 4000
+
+[syncer.to]
+topic-name = "binlog_test_topic"

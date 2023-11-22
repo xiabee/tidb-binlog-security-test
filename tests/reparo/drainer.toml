@@ -1,0 +1,39 @@
+# drainer Configuration.
+
+# addr (i.e. 'host:port') to listen on for drainer connections
+# will register this addr into etcd
+# addr = "127.0.0.1:8249"
+
+# the interval time (in seconds) of detect pumps' status
+detect-interval = 10
+
+# drainer meta data directory path
+data-dir = "/tmp/tidb_binlog_test/data.drainer"
+
+# a comma separated list of PD endpoints
+pd-urls = "http://127.0.0.1:2379"
+
+# syncer Configuration.
+[syncer]
+
+# disable sync these schema
+ignore-schemas = "INFORMATION_SCHEMA,PERFORMANCE_SCHEMA,mysql,test"
+
+# number of binlog events in a transaction batch
+txn-batch = 200
+
+# work count to execute binlogs
+worker-count = 20
+
+# safe mode will split update to delete and insert
+safe-mode = false
+
+# downstream storage, equal to --dest-db-type
+# valid values are "mysql", "file", "tidb", "kafka"
+db-type = "file"
+
+#[syncer.to]
+#dir = "/data/data.drainer"
+#compression = "gzip"
+
+

@@ -1,0 +1,65 @@
+# drainer Configuration.
+
+# addr (i.e. 'host:port') to listen on for drainer connections
+# will register this addr into etcd
+# addr = "127.0.0.1:8249"
+
+# the interval time (in seconds) of detect pumps' status
+detect-interval = 10
+
+# drainer meta data directory path
+data-dir = "/tmp/tidb_binlog_test/data.drainer"
+
+# a comma separated list of PD endpoints
+pd-urls = "http://127.0.0.1:2379"
+
+# syncer Configuration.
+[syncer]
+
+# number of binlog events in a transaction batch
+txn-batch = 1
+
+# work count to execute binlogs
+worker-count = 1
+
+# safe mode will split update to delete and insert
+safe-mode = false
+
+# downstream storage, equal to --dest-db-type
+# valid values are "mysql", "file", "tidb", "kafka"
+db-type = "mysql"
+
+# disable sync these schema
+ignore-schemas = "INFORMATION_SCHEMA,PERFORMANCE_SCHEMA,mysql"
+
+##replicate-do-db priority over replicate-do-table if have same db name
+##and we support regex expression , start with '~' declare use regex expression.
+#
+replicate-do-db = ["~^do_start.*","do_name"]
+
+[[syncer.replicate-do-table]]
+db-name ="test"
+tbl-name = "do_name"
+
+[[syncer.replicate-do-table]]
+db-name ="test"
+tbl-name = "do_ignore_name"
+
+[[syncer.replicate-do-table]]
+db-name ="test"
+tbl-name = "~^do_start.*"
+
+[[syncer.ignore-table]]
+db-name = "test"
+tbl-name = "do_ignore_name"
+
+# the downstream mysql protocol database
+[syncer.to]
+host = "127.0.0.1"
+user = "root"
+password = ""
+port = 3306
+[syncer.to.checkpoint]
+#schema = "tidb_binlog"
+
+
