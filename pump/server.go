@@ -28,25 +28,25 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tidb-binlog/pkg/flags"
+	"github.com/pingcap/tidb-binlog/pkg/node"
+	"github.com/pingcap/tidb-binlog/pkg/util"
+	"github.com/pingcap/tidb-binlog/pump/storage"
 	"github.com/pingcap/tidb/kv"
 	kvstore "github.com/pingcap/tidb/store"
 	"github.com/pingcap/tidb/store/driver"
-	"github.com/pingcap/tipb/go-binlog"
+	"github.com/pingcap/tidb/store/tikv"
+	"github.com/pingcap/tidb/store/tikv/oracle"
+	binlog "github.com/pingcap/tipb/go-binlog"
 	pb "github.com/pingcap/tipb/go-binlog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/soheilhy/cmux"
-	"github.com/tikv/client-go/v2/tikv"
 	pd "github.com/tikv/pd/client"
 	"github.com/unrolled/render"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-
-	"github.com/pingcap/tidb-binlog/pkg/flags"
-	"github.com/pingcap/tidb-binlog/pkg/node"
-	"github.com/pingcap/tidb-binlog/pkg/util"
-	"github.com/pingcap/tidb-binlog/pump/storage"
 )
 
 var (
@@ -308,14 +308,13 @@ func (s *Server) PullBinlogs(in *binlog.PullBinlogReq, stream binlog.Pump_PullBi
 			}
 			resp := new(binlog.PullBinlogResp)
 
-			resp.Entity = *data
+			resp.Entity.Payload = data
 			err = stream.Send(resp)
 			if err != nil {
 				log.Warn("send failed", zap.Error(err))
 				return err
 			}
-			log.Debug("PullBinlogs send binlog payload success", zap.Int("len", len(data.Payload)),
-				zap.Int64("start ts", data.Meta.StartTs), zap.Int64("commit ts", data.Meta.CommitTs))
+			log.Debug("PullBinlogs send binlog payload success", zap.Int("len", len(data)))
 		case <-stream.Context().Done():
 			log.Debug("stream done", zap.Error(stream.Context().Err()))
 			return nil
@@ -539,7 +538,7 @@ func (s *Server) detectDrainerCheckpoint() {
 		case <-ticker.C:
 			gcTS := s.storage.GetGCTS()
 			alertGCMS := earlyAlertGC.Nanoseconds() / 1000 / 1000
-			alertGCTS := gcTS + int64(storage.EncodeTSO(alertGCMS))
+			alertGCTS := gcTS + int64(oracle.EncodeTSO(alertGCMS))
 
 			log.Info("use gc ts to detect drainer checkpoint", zap.Int64("gc ts", gcTS))
 			// detect whether the binlog before drainer's checkpoint had been purged
@@ -587,7 +586,7 @@ func (s *Server) gcBinlogFile() {
 		}
 
 		millisecond := time.Now().Add(-s.gcDuration).UnixNano() / 1000 / 1000
-		gcTS := int64(storage.EncodeTSO(millisecond))
+		gcTS := int64(oracle.EncodeTSO(millisecond))
 
 		log.Info("send gc request to storage", zap.Int64("request gc ts", gcTS))
 		s.storage.GC(gcTS)

@@ -41,11 +41,11 @@ func (cs *LoadSuite) TearDownTest(c *check.C) {
 
 func (cs *LoadSuite) TestTiFlash(c *check.C) {
 	sql := "ALTER TABLE t SET TIFLASH REPLICA 3 LOCATION LABELS \"rack\", \"host\", \"abc\""
-	res := isTiFlashDDL(sql)
+	res := isSetTiFlashReplica(sql)
 	c.Assert(res, check.IsTrue)
 
 	sql = "create table a(id int)"
-	res = isTiFlashDDL(sql)
+	res = isSetTiFlashReplica(sql)
 	c.Assert(res, check.IsFalse)
 }
 
@@ -347,37 +347,14 @@ func (s *execDDLSuite) TestShouldExecInTransaction(c *check.C) {
 	c.Assert(err, check.IsNil)
 
 	mock.ExpectBegin()
-	mock.ExpectExec("CREATE TABLE `t` \\(`id` INT\\)").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE TABLE").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	loader := &loaderImpl{db: db, ctx: context.Background(), destDBType: MysqlDB}
+	loader := &loaderImpl{db: db, ctx: context.Background()}
 
-	ddl := DDL{SQL: "CREATE TABLE `t` (`id` INT)"}
+	ddl := DDL{SQL: "CREATE TABLE"}
 	err = loader.execDDL(&ddl)
 	c.Assert(err, check.IsNil)
-}
-
-func (s *execDDLSuite) TestOracleTruncateDDL(c *check.C) {
-	db, mock, err := sqlmock.New()
-	c.Assert(err, check.IsNil)
-
-	mock.ExpectBegin()
-	mock.ExpectExec("BEGIN test.do_truncate\\('test.t1',''\\);END;").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectCommit()
-
-	loader := &loaderImpl{db: db, ctx: context.Background(), destDBType: OracleDB}
-
-	ddl := DDL{SQL: "truncate table t1", Database: "test", Table: "t1"}
-	err = loader.execDDL(&ddl)
-	c.Assert(err, check.IsNil)
-}
-
-func (s *execDDLSuite) TestIsTruncateTableStmt(c *check.C) {
-	sql := "truncate table test.t1"
-	c.Assert(isTruncateTableStmt(sql), check.IsTrue)
-
-	sql = "alter table test.t1 add column c3 int"
-	c.Assert(isTruncateTableStmt(sql), check.IsFalse)
 }
 
 func (s *execDDLSuite) TestShouldUseDatabase(c *check.C) {
@@ -386,12 +363,12 @@ func (s *execDDLSuite) TestShouldUseDatabase(c *check.C) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("use `test_db`").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("CREATE TABLE `t` \\(`id` INT\\)").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE TABLE").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	loader := &loaderImpl{db: db, ctx: context.Background(), destDBType: MysqlDB}
+	loader := &loaderImpl{db: db, ctx: context.Background()}
 
-	ddl := DDL{SQL: "CREATE TABLE `t` (`id` INT)", Database: "test_db"}
+	ddl := DDL{SQL: "CREATE TABLE", Database: "test_db"}
 	err = loader.execDDL(&ddl)
 	c.Assert(err, check.IsNil)
 }
@@ -542,7 +519,7 @@ func (s *txnManagerSuite) TestRunTxnManager(c *check.C) {
 	txnManager.pop(t)
 	c.Assert(t, check.DeepEquals, txn)
 	// Now txn won't be blocked but txnManager should be blocked at cond.Wait()
-	inputTxnInTime(c, input, txn, time.Millisecond)
+	inputTxnInTime(c, input, txn, 10*time.Microsecond)
 	// close txnManager and output should be closed when txnManager is closed
 	txnManager.Close()
 	outputClose := make(chan struct{})

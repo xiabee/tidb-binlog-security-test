@@ -1,16 +1,13 @@
 package drainer
 
 import (
-	"database/sql"
-
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb-binlog/drainer/checkpoint"
 	"github.com/pingcap/tidb-binlog/drainer/relay"
 	"github.com/pingcap/tidb-binlog/drainer/sync"
 	"github.com/pingcap/tidb-binlog/pkg/loader"
-	obinlog "github.com/pingcap/tidb/tidb-binlog/proto/go-binlog"
-	router "github.com/pingcap/tidb/util/table-router"
+	obinlog "github.com/pingcap/tidb-tools/tidb-binlog/proto/go-binlog"
 	"go.uber.org/zap"
 )
 
@@ -45,12 +42,8 @@ func feedByRelayLogIfNeed(cfg *Config) error {
 	if err != nil {
 		return errors.Annotate(err, "failed to create reader")
 	}
-	var db *sql.DB
-	if cfg.SyncerCfg.DestDBType == "oracle" {
-		db, err = loader.CreateOracleDB(cfg.SyncerCfg.To.User, cfg.SyncerCfg.To.Password, scfg.To.Host, scfg.To.Port, cfg.SyncerCfg.To.OracleServiceName, cfg.SyncerCfg.To.OracleConnectString)
-	} else {
-		db, err = loader.CreateDBWithSQLMode(scfg.To.User, scfg.To.Password, scfg.To.Host, scfg.To.Port, scfg.To.TLS, scfg.StrSQLMode, scfg.To.Params, scfg.To.ReadTimeout)
-	}
+
+	db, err := loader.CreateDBWithSQLMode(scfg.To.User, scfg.To.Password, scfg.To.Host, scfg.To.Port, scfg.To.TLS, scfg.StrSQLMode, scfg.To.Params, scfg.To.ReadTimeout)
 	if err != nil {
 		return errors.Annotate(err, "failed to create SQL db")
 	}
@@ -63,7 +56,7 @@ func feedByRelayLogIfNeed(cfg *Config) error {
 		return errors.Annotate(err, "failed to create loader")
 	}
 
-	err = feedByRelayLog(reader, ld, cp, cfg)
+	err = feedByRelayLog(reader, ld, cp)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -72,7 +65,7 @@ func feedByRelayLogIfNeed(cfg *Config) error {
 }
 
 // feedByRelayLog will take over the `ld loader.Loader`.
-func feedByRelayLog(r relay.Reader, ld loader.Loader, cp checkpoint.CheckPoint, cfg *Config) error {
+func feedByRelayLog(r relay.Reader, ld loader.Loader, cp checkpoint.CheckPoint) error {
 	checkpointTS := cp.TS()
 	lastSuccessTS := checkpointTS
 	r.Run()
@@ -94,17 +87,6 @@ func feedByRelayLog(r relay.Reader, ld loader.Loader, cp checkpoint.CheckPoint, 
 	readerTxnsCClosed := false
 
 	loaderClosed := false
-
-	var tableRouter *router.Table = nil
-	upperColName := false
-	var routerErr error
-	if cfg.SyncerCfg.DestDBType == "oracle" {
-		upperColName = true
-		tableRouter, _, routerErr = genRouterAndBinlogEvent(cfg.SyncerCfg)
-		if routerErr != nil {
-			return errors.Annotate(routerErr, "when feed by relay log, gen router and filter failed")
-		}
-	}
 
 	for {
 		// when reader is drained and all txn has been push into loader
@@ -130,9 +112,8 @@ func feedByRelayLog(r relay.Reader, ld loader.Loader, cp checkpoint.CheckPoint, 
 			if sbinlog.CommitTs <= checkpointTS {
 				continue
 			}
-			var txn *loader.Txn
-			var err error
-			txn, err = loader.SecondaryBinlogToTxn(sbinlog, tableRouter, upperColName)
+
+			txn, err := loader.SecondaryBinlogToTxn(sbinlog)
 			if err != nil {
 				return errors.Trace(err)
 			}

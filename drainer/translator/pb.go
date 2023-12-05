@@ -19,17 +19,15 @@ import (
 	"strings"
 	"time"
 
-	//nolint
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/errors"
-	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/parser/model"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/codec"
 	tipb "github.com/pingcap/tipb/go-binlog"
 
-	"github.com/pingcap/tidb-binlog/pkg/loader"
 	"github.com/pingcap/tidb-binlog/pkg/util"
 	pb "github.com/pingcap/tidb-binlog/proto/binlog"
 )
@@ -117,7 +115,7 @@ func TiBinlogToPbBinlog(infoGetter TableInfoGetter, schema string, table string,
 func genInsert(schema string, ptable, table *model.TableInfo, row []byte) (event *pb.Event, err error) {
 	columns := table.Columns
 
-	columnValues, err := insertRowToDatums(table, row, time.Local)
+	columnValues, err := insertRowToDatums(table, row)
 	if err != nil {
 		return nil, errors.Annotatef(err, "table `%s`.`%s`", schema, table.Name)
 	}
@@ -131,14 +129,14 @@ func genInsert(schema string, ptable, table *model.TableInfo, row []byte) (event
 
 	for _, col := range columns {
 		cols = append(cols, col.Name.O)
-		tps = append(tps, col.GetType())
-		mysqlTypes = append(mysqlTypes, types.TypeToStr(col.GetType(), col.GetCharset()))
+		tps = append(tps, col.Tp)
+		mysqlTypes = append(mysqlTypes, types.TypeToStr(col.Tp, col.Charset))
 		val, ok := columnValues[col.ID]
 		if !ok {
 			val = getDefaultOrZeroValue(ptable, col)
 		}
 
-		value, err := formatData(val, col.FieldType, loader.DBTypeUnknown)
+		value, err := formatData(val, col.FieldType)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
@@ -174,19 +172,19 @@ func genUpdate(schema string, ptable, table *model.TableInfo, row []byte, canApp
 	for _, col := range columns {
 		val, ok := newColumnValues[col.ID]
 		if ok {
-			oldValue, err := formatData(oldColumnValues[col.ID], col.FieldType, loader.DBTypeUnknown)
+			oldValue, err := formatData(oldColumnValues[col.ID], col.FieldType)
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
-			newValue, err := formatData(val, col.FieldType, loader.DBTypeUnknown)
+			newValue, err := formatData(val, col.FieldType)
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
 			oldVals = append(oldVals, oldValue)
 			newVals = append(newVals, newValue)
 			cols = append(cols, col.Name.O)
-			tps = append(tps, col.GetType())
-			mysqlTypes = append(mysqlTypes, types.TypeToStr(col.GetType(), col.GetCharset()))
+			tps = append(tps, col.Tp)
+			mysqlTypes = append(mysqlTypes, types.TypeToStr(col.Tp, col.Charset))
 		}
 	}
 
@@ -218,14 +216,14 @@ func genDelete(schema string, table *model.TableInfo, row []byte) (event *pb.Eve
 	for _, col := range columns {
 		val, ok := columnValues[col.ID]
 		if ok {
-			value, err := formatData(val, col.FieldType, loader.DBTypeUnknown)
+			value, err := formatData(val, col.FieldType)
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
 			vals = append(vals, value)
 			cols = append(cols, col.Name.O)
-			tps = append(tps, col.GetType())
-			mysqlTypes = append(mysqlTypes, types.TypeToStr(col.GetType(), col.GetCharset()))
+			tps = append(tps, col.Tp)
+			mysqlTypes = append(mysqlTypes, types.TypeToStr(col.Tp, col.Charset))
 		}
 	}
 

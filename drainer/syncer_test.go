@@ -21,11 +21,10 @@ import (
 
 	"github.com/pingcap/check"
 	"github.com/pingcap/errors"
-	"github.com/pingcap/tidb/parser/model"
-	pb "github.com/pingcap/tipb/go-binlog"
-
+	"github.com/pingcap/parser/model"
 	"github.com/pingcap/tidb-binlog/drainer/checkpoint"
 	"github.com/pingcap/tidb-binlog/pkg/filter"
+	pb "github.com/pingcap/tipb/go-binlog"
 )
 
 type syncerSuite struct{}
@@ -47,7 +46,7 @@ func (s *syncerSuite) TestFilterTable(c *check.C) {
 		},
 	}
 
-	ignore, err := skipDMLEvent(pv, schema, filter, nil)
+	ignore, err := filterTable(pv, filter, schema)
 	c.Assert(err, check.IsNil)
 	c.Assert(ignore, check.IsTrue)
 
@@ -56,7 +55,7 @@ func (s *syncerSuite) TestFilterTable(c *check.C) {
 	schema.tableIDToName[keepID] = TableName{Schema: "keep", Table: "keep"}
 	pv.Mutations = append(pv.Mutations, pb.TableMutation{TableId: keepID})
 
-	ignore, err = skipDMLEvent(pv, schema, filter, nil)
+	ignore, err = filterTable(pv, filter, schema)
 	c.Assert(err, check.IsNil)
 	c.Assert(ignore, check.IsFalse)
 	c.Assert(len(pv.Mutations), check.Equals, 1)
@@ -157,34 +156,6 @@ func (s *syncerSuite) TestNewSyncer(c *check.C) {
 		Query:    "create table test.test(id int)",
 		BinlogInfo: &model.HistoryInfo{
 			SchemaVersion: 2,
-			TableInfo: &model.TableInfo{
-				ID:   testTableID,
-				Name: model.CIStr{O: "test", L: "test"},
-			},
-		},
-	}
-	syncer.Add(&binlogItem{
-		binlog: binlog,
-		job:    job,
-	})
-
-	// Add failed ddl
-	commitTS++
-	jobID++
-	binlog = &pb.Binlog{
-		Tp:       pb.BinlogType_Commit,
-		CommitTs: commitTS,
-		DdlQuery: []byte("alter table test.test add column a int"),
-		DdlJobId: jobID,
-	}
-	job = &model.Job{
-		ID:       jobID,
-		SchemaID: 1, // must be the previous create schema id of `test`
-		Type:     model.ActionAddColumn,
-		State:    model.JobStateSynced,
-		Query:    "create table test.test(id int)",
-		BinlogInfo: &model.HistoryInfo{
-			SchemaVersion: 0,
 			TableInfo: &model.TableInfo{
 				ID:   testTableID,
 				Name: model.CIStr{O: "test", L: "test"},

@@ -21,8 +21,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/godror/godror"
-
 	"github.com/pingcap/tidb-binlog/drainer/loopbacksync"
 	"github.com/pingcap/tidb/infoschema"
 
@@ -42,36 +40,26 @@ var (
 )
 
 type executor struct {
-	db                  *gosql.DB
-	destDBType          DBType
-	batchSize           int
-	workerCount         int
-	info                *loopbacksync.LoopBackSync
-	queryHistogramVec   *prometheus.HistogramVec
-	refreshTableInfo    func(schema string, table string) (info *tableInfo, err error)
-	fTryRefreshTableErr func(err error) bool
-	fSingleExec         func(dmls []*DML, safeMode bool) error
+	db                *gosql.DB
+	batchSize         int
+	workerCount       int
+	info              *loopbacksync.LoopBackSync
+	queryHistogramVec *prometheus.HistogramVec
+	refreshTableInfo  func(schema string, table string) (info *tableInfo, err error)
 }
 
 func newExecutor(db *gosql.DB) *executor {
 	exe := &executor{
-		db:                  db,
-		batchSize:           defaultBatchSize,
-		workerCount:         defaultWorkerCount,
-		fTryRefreshTableErr: tryRefreshTableErr,
+		db:          db,
+		batchSize:   defaultBatchSize,
+		workerCount: defaultWorkerCount,
 	}
-	//default using tidb singleExec
-	exe.fSingleExec = exe.singleExec
+
 	return exe
 }
 
 func (e *executor) withRefreshTableInfo(fn func(schema string, table string) (info *tableInfo, err error)) *executor {
 	e.refreshTableInfo = fn
-	return e
-}
-
-func (e *executor) withDestDBType(destDBType DBType) *executor {
-	e.destDBType = destDBType
 	return e
 }
 
@@ -213,10 +201,10 @@ func (e *executor) bulkReplace(inserts []*DML) error {
 
 	var builder strings.Builder
 
-	cols := "(" + buildColumnList(info.columns, e.destDBType) + ")"
+	cols := "(" + buildColumnList(info.columns) + ")"
 	builder.WriteString("REPLACE INTO " + inserts[0].TableName() + cols + " VALUES ")
 
-	holder := fmt.Sprintf("(%s)", holderString(len(info.columns), e.destDBType))
+	holder := fmt.Sprintf("(%s)", holderString(len(info.columns)))
 	for i := 0; i < len(inserts); i++ {
 		if i > 0 {
 			builder.WriteByte(',')
@@ -243,27 +231,6 @@ func (e *executor) bulkReplace(inserts []*DML) error {
 	return errors.Trace(err)
 }
 
-// TODO: add bulkOperation for oracle
-func (e *executor) oracleBulkOperation(dmls []*DML) error {
-	if len(dmls) == 0 {
-		return nil
-	}
-	tx, err := e.begin()
-	if err != nil {
-		return errors.Trace(err)
-	}
-	for _, dml := range dmls {
-		sql, args := dml.sql()
-		_, err = tx.autoRollbackExec(sql, args...)
-		if err != nil {
-			return errors.Trace(err)
-		}
-	}
-	err = tx.commit()
-	return errors.Trace(err)
-
-}
-
 // we merge dmls by primary key, after merge by key, we
 // have only one dml for one primary key which contains the newest value(like a kv store),
 // to avoid other column's duplicate entry, we should apply delete dmls first, then insert&update
@@ -283,31 +250,19 @@ func (e *executor) execTableBatch(ctx context.Context, dmls []*DML) error {
 	log.Debug("merge dmls", zap.Reflect("dmls", dmls), zap.Reflect("merged", types))
 
 	if allDeletes, ok := types[DeleteDMLType]; ok {
-		bulkDelete := e.bulkDelete
-		if e.destDBType == OracleDB {
-			bulkDelete = e.oracleBulkOperation
-		}
-		if err := e.splitExecDML(ctx, allDeletes, bulkDelete); err != nil {
+		if err := e.splitExecDML(ctx, allDeletes, e.bulkDelete); err != nil {
 			return errors.Trace(err)
 		}
 	}
 
 	if allInserts, ok := types[InsertDMLType]; ok {
-		bulkInsert := e.bulkReplace
-		if e.destDBType == OracleDB {
-			bulkInsert = e.oracleBulkOperation
-		}
-		if err := e.splitExecDML(ctx, allInserts, bulkInsert); err != nil {
+		if err := e.splitExecDML(ctx, allInserts, e.bulkReplace); err != nil {
 			return errors.Trace(err)
 		}
 	}
 
 	if allUpdates, ok := types[UpdateDMLType]; ok {
-		bulkUpdate := e.bulkReplace
-		if e.destDBType == OracleDB {
-			bulkUpdate = e.oracleBulkOperation
-		}
-		if err := e.splitExecDML(ctx, allUpdates, bulkUpdate); err != nil {
+		if err := e.splitExecDML(ctx, allUpdates, e.bulkReplace); err != nil {
 			return errors.Trace(err)
 		}
 	}
@@ -347,29 +302,15 @@ func tryRefreshTableErr(err error) bool {
 	return false
 }
 
-func tryRefreshTableOracleErr(err error) bool {
-	oraErr, ok := godror.AsOraErr(err)
-	if !ok {
-		return false
-	}
-	// Invalid identifier for oracle db error
-	// https://docs.oracle.com/database/121/DRDAS/error_code.htm#DRDAS513
-	if oraErr.Code() == 904 {
-		return true
-	}
-	return false
-}
-
 func (e *executor) singleExecRetry(ctx context.Context, allDMLs []*DML, safeMode bool, retryNum int, backoff time.Duration) error {
-	var execErr error
 	for _, dmls := range splitDMLs(allDMLs, e.batchSize) {
 		err := util.RetryContext(ctx, retryNum, backoff, 1, func(context.Context) error {
-			execErr = e.fSingleExec(dmls, safeMode)
+			execErr := e.singleExec(dmls, safeMode)
 			if execErr == nil {
 				return nil
 			}
 
-			if e.fTryRefreshTableErr(execErr) && e.refreshTableInfo != nil {
+			if tryRefreshTableErr(execErr) && e.refreshTableInfo != nil {
 				log.Info("try refresh table info")
 				name2info := make(map[string]*tableInfo)
 				for _, dml := range dmls {
@@ -431,62 +372,6 @@ func (e *executor) singleExec(dmls []*DML, safeMode bool) error {
 			}
 		} else {
 			sql, args := dml.sql()
-			_, err := tx.autoRollbackExec(sql, args...)
-			if err != nil {
-				return errors.Trace(err)
-			}
-		}
-	}
-
-	err = tx.commit()
-	return errors.Trace(err)
-}
-
-func (e *executor) singleOracleExec(dmls []*DML, safeMode bool) error {
-	tx, err := e.begin()
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	for _, dml := range dmls {
-		if safeMode && dml.Tp == UpdateDMLType {
-			//delete old row
-			sql, args := dml.deleteSQL()
-			log.Debug("safeMode and UpdateDMLType", zap.String("delete old", sql))
-			_, err := tx.autoRollbackExec(sql, args...)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			//delete new row
-			sql, args = dml.oracleDeleteNewValueSQL()
-			log.Debug("safeMode and UpdateDMLType", zap.String("delete new old", sql))
-			_, err = tx.autoRollbackExec(sql, args...)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			//insert new row
-			sql, args = dml.insertSQL()
-			log.Debug("safeMode and UpdateDMLType", zap.String("insert new old", sql))
-			_, err = tx.autoRollbackExec(sql, args...)
-			if err != nil {
-				return errors.Trace(err)
-			}
-		} else if safeMode && dml.Tp == InsertDMLType {
-			sql, args := dml.deleteSQL()
-			log.Debug("safeMode and InsertDMLType", zap.String("delete sql", sql))
-			_, err := tx.autoRollbackExec(sql, args...)
-			if err != nil {
-				return errors.Trace(err)
-			}
-			sql, args = dml.insertSQL()
-			log.Debug("safeMode and InsertDMLType", zap.String("insert sql", sql))
-			_, err = tx.autoRollbackExec(sql, args...)
-			if err != nil {
-				return errors.Trace(err)
-			}
-		} else {
-			sql, args := dml.sql()
-			log.Debug("normal sql with no safeMode", zap.String("sql", sql))
 			_, err := tx.autoRollbackExec(sql, args...)
 			if err != nil {
 				return errors.Trace(err)

@@ -14,10 +14,8 @@
 package pump
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
-
 	"github.com/pingcap/tidb-binlog/pump/storage"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -52,8 +50,8 @@ var registry = prometheus.NewRegistry()
 func init() {
 	storage.InitMetircs(registry)
 
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	registry.MustRegister(collectors.NewGoCollector())
+	registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+	registry.MustRegister(prometheus.NewGoCollector())
 
 	registry.MustRegister(rpcHistogram)
 	registry.MustRegister(lossBinlogCacheCounter)

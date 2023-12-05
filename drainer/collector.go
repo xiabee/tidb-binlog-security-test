@@ -24,21 +24,20 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/store"
-	"github.com/pingcap/tidb/store/driver"
-	"github.com/pingcap/tipb/go-binlog"
-	"github.com/tikv/client-go/v2/oracle"
-	"go.uber.org/zap"
-	"golang.org/x/net/context"
-
+	"github.com/pingcap/parser/model"
 	"github.com/pingcap/tidb-binlog/drainer/checkpoint"
 	"github.com/pingcap/tidb-binlog/pkg/etcd"
 	"github.com/pingcap/tidb-binlog/pkg/flags"
 	"github.com/pingcap/tidb-binlog/pkg/node"
 	"github.com/pingcap/tidb-binlog/pkg/util"
 	"github.com/pingcap/tidb-binlog/pump"
+	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/store"
+	"github.com/pingcap/tidb/store/driver"
+	"github.com/pingcap/tidb/store/tikv/oracle"
+	"github.com/pingcap/tipb/go-binlog"
+	"go.uber.org/zap"
+	"golang.org/x/net/context"
 )
 
 const (
@@ -269,8 +268,7 @@ func (c *Collector) reportErr(ctx context.Context, err error) {
 // we CAN NOT query the job from the tikv according the job id.
 // just skip this kind of binlog now.
 func skipQueryJob(binlog *binlog.Binlog) bool {
-	// ToLower is to fix https://github.com/pingcap/tidb/issues/31611
-	q := bytes.ToLower(binlog.GetDdlQuery())
+	q := binlog.GetDdlQuery()
 	return bytes.HasPrefix(q, []byte("select setval"))
 }
 

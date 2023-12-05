@@ -21,21 +21,21 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"testing"
 	"time"
 
 	"github.com/gorilla/mux"
 	. "github.com/pingcap/check"
-	pd "github.com/tikv/pd/client"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
 	"github.com/pingcap/tidb-binlog/pkg/etcd"
 	"github.com/pingcap/tidb-binlog/pkg/node"
 	"github.com/pingcap/tidb-binlog/pkg/security"
 	"github.com/pingcap/tidb-binlog/pkg/util"
+	pd "github.com/tikv/pd/client"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
-var _ = SerialSuites(&testServerSuite{})
+var _ = Suite(&testServerSuite{})
 
 type testServerSuite struct{}
 
@@ -111,7 +111,7 @@ func (t *testServerSuite) TestClose(c *C) {
 	c.Assert(server.isClosed, Equals, int32(1))
 }
 
-func (t *testServerSuite) TestCommitStatus(c *C) {
+func TestCommitStatus(t *testing.T) {
 	cli := etcd.NewClient(testEtcdCluster.RandClient(), node.DefaultRootPath)
 	reg := node.NewEtcdRegistry(cli, 5*time.Second)
 
@@ -134,10 +134,10 @@ func (t *testServerSuite) TestCommitStatus(c *C) {
 		}
 		s.commitStatus()
 		if s.status.State != cs.expected {
-			c.Fatalf("Invalid state after commit: expect %s, get %s", cs.expected, s.status.State)
+			t.Fatalf("Invalid state after commit: expect %s, get %s", cs.expected, s.status.State)
 		}
 		if s.status.MaxCommitTS != cs.ts {
-			c.Fatalf("MaxCommitTS not updated correctly: expect %d, get %d", cs.ts, s.status.MaxCommitTS)
+			t.Fatalf("MaxCommitTS not updated correctly: expect %d, get %d", cs.ts, s.status.MaxCommitTS)
 		}
 	}
 }

@@ -26,24 +26,22 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/store"
-	"github.com/pingcap/tidb/store/driver"
-	"github.com/pingcap/tipb/go-binlog"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/soheilhy/cmux"
-	"github.com/tikv/client-go/v2/oracle"
-	"github.com/unrolled/render"
-	"go.uber.org/zap"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
 	"github.com/pingcap/tidb-binlog/drainer/checkpoint"
 	"github.com/pingcap/tidb-binlog/pkg/flags"
 	"github.com/pingcap/tidb-binlog/pkg/node"
 	"github.com/pingcap/tidb-binlog/pkg/util"
+	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/store"
+	"github.com/pingcap/tidb/store/driver"
+	"github.com/pingcap/tidb/store/tikv/oracle"
+	"github.com/pingcap/tipb/go-binlog"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/soheilhy/cmux"
+	"github.com/unrolled/render"
+	"go.uber.org/zap"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -201,12 +199,7 @@ func createSyncer(etcdURLs string, cp checkpoint.CheckPoint, cfg *SyncerConfig) 
 	}
 	defer tiStore.Close()
 
-	var jobs []*model.Job
-	if cfg.LoadSchemaSnapshot {
-		jobs, err = loadTableInfos(tiStore, cp.TS())
-	} else {
-		jobs, err = loadHistoryDDLJobs(tiStore)
-	}
+	jobs, err := loadHistoryDDLJobs(tiStore)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -232,7 +225,7 @@ func (s *Server) Notify(ctx context.Context, in *binlog.NotifyReq) (*binlog.Noti
 	if err != nil {
 		log.Error("grpc call notify failed", zap.Error(err))
 	}
-	return &binlog.NotifyResp{}, errors.Trace(err)
+	return nil, errors.Trace(err)
 }
 
 // DumpDDLJobs implements the gRPC interface of drainer server
@@ -280,19 +273,6 @@ func (s *Server) Start() error {
 			errCh <- err
 		}
 	})
-
-	if s.cfg.SyncerCfg != nil && s.cfg.SyncerCfg.LoadSchemaSnapshot {
-		s.tg.GoNoPanic("gc_safepoint", func() {
-			defer func() { go s.Close() }()
-			pdCli, err := getPdClient(s.cfg.EtcdURLs, s.cfg.Security)
-			if err != nil {
-				log.Error("fail to create pdCli", zap.Error(err))
-				errCh <- err
-			}
-			updateServiceSafePoint(s.ctx, pdCli, s.cp, defaultDrainerGCSafePointTTL)
-			pdCli.Close()
-		})
-	}
 
 	s.tg.GoNoPanic("collect", func() {
 		defer func() { go s.Close() }()

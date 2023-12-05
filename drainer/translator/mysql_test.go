@@ -15,14 +15,12 @@ package translator
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/pingcap/check"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/parser/mysql"
-	"github.com/pingcap/tidb/types"
-
+	"github.com/pingcap/parser/model"
+	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb-binlog/pkg/loader"
+	"github.com/pingcap/tidb/types"
 )
 
 type testMysqlSuite struct {
@@ -39,7 +37,7 @@ func (t *testMysqlSuite) TestGenColumnList(c *check.C) {
 func (t *testMysqlSuite) TestDDL(c *check.C) {
 	t.SetDDL()
 
-	txn, err := TiBinlogToTxn(t, t.Schema, t.Table, t.TiBinlog, nil, true, time.Local)
+	txn, err := TiBinlogToTxn(t, t.Schema, t.Table, t.TiBinlog, nil, true)
 	c.Assert(err, check.IsNil)
 
 	c.Assert(txn, check.DeepEquals, &loader.Txn{
@@ -53,7 +51,7 @@ func (t *testMysqlSuite) TestDDL(c *check.C) {
 }
 
 func (t *testMysqlSuite) testDML(c *check.C, tp loader.DMLType) {
-	txn, err := TiBinlogToTxn(t, t.Schema, t.Table, t.TiBinlog, t.PV, false, time.Local)
+	txn, err := TiBinlogToTxn(t, t.Schema, t.Table, t.TiBinlog, t.PV, false)
 	c.Assert(err, check.IsNil)
 
 	c.Assert(txn.DMLs, check.HasLen, 1)
@@ -107,7 +105,7 @@ func checkMysqlColumn(c *check.C, col *model.ColumnInfo, myValue interface{}, da
 	tiStr, err := datum.ToString()
 	c.Assert(err, check.IsNil)
 
-	if col.GetType() == mysql.TypeEnum {
+	if col.Tp == mysql.TypeEnum {
 		tiStr = fmt.Sprintf("%d", datum.GetInt64())
 	}
 

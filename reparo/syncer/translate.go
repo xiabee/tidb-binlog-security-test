@@ -18,8 +18,8 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/parser"
-	"github.com/pingcap/tidb/parser/ast"
+	"github.com/pingcap/parser"
+	"github.com/pingcap/parser/ast"
 	_ "github.com/pingcap/tidb/types/parser_driver" // for parser driver
 	"github.com/pingcap/tidb/util/codec"
 	"go.uber.org/zap"
@@ -178,9 +178,9 @@ func parserSchemaTableFromDDL(ddlQuery string) (schema, table string, err error)
 			haveUseStmt = true
 			schema = node.DBName
 		case *ast.CreateDatabaseStmt:
-			schema = node.Name.O
+			schema = node.Name
 		case *ast.DropDatabaseStmt:
-			schema = node.Name.O
+			schema = node.Name
 		case *ast.TruncateTableStmt:
 			if len(node.Table.Schema.O) != 0 {
 				schema = node.Table.Schema.O
@@ -217,11 +217,6 @@ func parserSchemaTableFromDDL(ddlQuery string) (schema, table string, err error)
 				schema = node.TableToTables[0].NewTable.Schema.O
 			}
 			table = node.TableToTables[0].NewTable.Name.O
-		case *ast.CreateViewStmt:
-			if len(node.ViewName.Schema.O) != 0 {
-				schema = node.ViewName.Schema.O
-			}
-			table = node.ViewName.Name.O
 		default:
 			return "", "", errors.Errorf("unknown ddl type, ddl: %s", ddlQuery)
 		}

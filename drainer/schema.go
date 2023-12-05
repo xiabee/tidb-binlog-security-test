@@ -18,24 +18,14 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/parser/mysql"
-	"go.uber.org/zap"
-
+	"github.com/pingcap/parser/model"
+	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb-binlog/pkg/filter"
+	"go.uber.org/zap"
 )
 
 const implicitColName = "_tidb_rowid"
 const implicitColID = -1
-
-// Keep it's the same as TiDB side.
-var defaultMySQLSchemaInfo = model.DBInfo{
-	ID:      1,
-	Name:    model.NewCIStr(mysql.SystemDB),
-	Charset: mysql.UTF8MB4Charset,
-	Collate: mysql.UTF8MB4DefaultCollation,
-	State:   model.StatePublic,
-}
 
 // Schema stores the source TiDB all schema infomations
 // schema infomations could be changed by drainer init and ddls appear
@@ -85,12 +75,6 @@ func NewSchema(jobs []*model.Job, hasImplicitCol bool) (*Schema, error) {
 	s.tables = make(map[int64][]schemaVersionTableInfo)
 
 	return s, nil
-}
-
-// InitForCreateMySQLSchema create the schema info for `mysql`, since it's created by KV after TiDB 6.2.
-func (s *Schema) InitForCreateMySQLSchema() {
-	s.schemas[defaultMySQLSchemaInfo.ID] = &defaultMySQLSchemaInfo
-	s.schemaNameToID[mysql.SystemDB] = defaultMySQLSchemaInfo.ID
 }
 
 func (s *Schema) String() string {
@@ -171,14 +155,8 @@ func (s *Schema) DropSchema(id int64) (string, error) {
 
 // CreateSchema adds new DBInfo
 func (s *Schema) CreateSchema(db *model.DBInfo) error {
-	if dbInfo, ok := s.schemas[db.ID]; ok {
-		// The `mysql` database is created by SQL, not by KV.
-		if dbInfo.Name.L == mysql.SystemDB {
-			delete(s.schemas, db.ID)
-			delete(s.schemaNameToID, mysql.SystemDB)
-		} else {
-			return errors.AlreadyExistsf("schema %s(%d)", db.Name, db.ID)
-		}
+	if _, ok := s.schemas[db.ID]; ok {
+		return errors.AlreadyExistsf("schema %s(%d)", db.Name, db.ID)
 	}
 
 	s.schemas[db.ID] = db
@@ -337,13 +315,6 @@ func skipUnsupportedDDLJob(job *model.Job) bool {
 	// 	return true
 	case model.ActionLockTable, model.ActionUnlockTable:
 		return true
-	case model.ActionAlterCacheTable, model.ActionAlterNoCacheTable:
-		return true
-	case model.ActionAlterTableAttributes, model.ActionAlterTablePartitionAttributes:
-		return true
-	case model.ActionCreatePlacementPolicy, model.ActionAlterPlacementPolicy, model.ActionDropPlacementPolicy,
-		model.ActionAlterTablePartitionPlacement, model.ActionModifySchemaDefaultPlacement, model.ActionAlterTablePlacement:
-		return true
 	}
 
 	return false
@@ -362,8 +333,9 @@ func (s *Schema) handleDDL(job *model.Job) (schemaName string, tableName string,
 
 	log.Debug("Handle job", zap.Stringer("job", job))
 
-	if job.Query == "" {
-		log.Warn("job query is empty", zap.Stringer("job", job))
+	sql = job.Query
+	if sql == "" {
+		return "", "", "", errors.Errorf("[ddl job sql miss]%+v", job)
 	}
 
 	switch job.Type {
@@ -492,34 +464,6 @@ func (s *Schema) handleDDL(job *model.Job) (schemaName string, tableName string,
 		schemaName = schema.Name.O
 		tableName = table.Name.O
 		s.truncateTableID[job.TableID] = struct{}{}
-
-	case model.ActionCreateTables:
-		binlogInfo := job.BinlogInfo
-		if binlogInfo == nil {
-			return "", "", "", errors.NotFoundf("job %d", job.ID)
-		}
-		multipleTableInfos := binlogInfo.MultipleTableInfos
-		for _, table := range multipleTableInfos {
-			if table == nil {
-				return "", "", "", errors.NotValidf("job %d", job.ID)
-			}
-
-			schema, ok := s.SchemaByID(job.SchemaID)
-			if !ok {
-				return "", "", "", errors.NotFoundf("schema %d", job.SchemaID)
-			}
-
-			err := s.CreateTable(job.BinlogInfo.SchemaVersion, schema, table)
-			if err != nil {
-				return "", "", "", errors.Trace(err)
-			}
-
-			s.version2SchemaTable[job.BinlogInfo.SchemaVersion] = TableName{Schema: schema.Name.O, Table: table.Name.O}
-			schemaName = schema.Name.O
-			tableName = table.Name.O
-		}
-		s.currentVersion = job.BinlogInfo.SchemaVersion
-
 	default:
 		binlogInfo := job.BinlogInfo
 		if binlogInfo == nil {
@@ -595,7 +539,7 @@ func addImplicitColumn(table *model.TableInfo) {
 		ID:   implicitColID,
 		Name: model.NewCIStr(implicitColName),
 	}
-	newColumn.SetType(mysql.TypeInt24)
+	newColumn.Tp = mysql.TypeInt24
 	table.Columns = append(table.Columns, newColumn)
 
 	newIndex := &model.IndexInfo{

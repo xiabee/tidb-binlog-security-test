@@ -27,27 +27,24 @@ import (
 	"time"
 
 	. "github.com/pingcap/check"
-	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tipb/go-binlog"
-	"github.com/tikv/client-go/v2/config"
-	"github.com/tikv/client-go/v2/txnkv/txnlock"
-	pd "github.com/tikv/pd/client"
-	"go.etcd.io/etcd/tests/v3/integration"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-
 	"github.com/pingcap/tidb-binlog/pkg/etcd"
 	"github.com/pingcap/tidb-binlog/pkg/node"
 	"github.com/pingcap/tidb-binlog/pkg/security"
 	"github.com/pingcap/tidb-binlog/pkg/util"
-	"github.com/pingcap/tidb-binlog/pump/storage"
+	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/store/tikv"
+	"github.com/pingcap/tidb/store/tikv/config"
+	"github.com/pingcap/tidb/store/tikv/oracle"
+	"github.com/pingcap/tipb/go-binlog"
+	pd "github.com/tikv/pd/client"
+	"go.etcd.io/etcd/integration"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 )
 
 var testEtcdCluster *integration.ClusterV3
 
 func TestPump(t *testing.T) {
-	integration.BeforeTest(t)
-
 	testEtcdCluster = integration.NewClusterV3(t, &integration.ClusterConfig{Size: 1})
 	defer testEtcdCluster.Terminate(t)
 
@@ -139,24 +136,18 @@ func (s *noOpStorage) GetGCTS() int64                              { return 0 }
 func (s *noOpStorage) GC(ts int64)                                 {}
 func (s *noOpStorage) MaxCommitTS() int64                          { return 0 }
 func (s *noOpStorage) GetBinlog(ts int64) (*binlog.Binlog, error)  { return nil, nil }
-func (s *noOpStorage) PullCommitBinlog(ctx context.Context, last int64) <-chan *binlog.Entity {
-	return make(chan *binlog.Entity)
+func (s *noOpStorage) PullCommitBinlog(ctx context.Context, last int64) <-chan []byte {
+	return make(chan []byte)
 }
 func (s *noOpStorage) Close() error { return nil }
 
 type fakePullable struct{ noOpStorage }
 
-func (s *fakePullable) PullCommitBinlog(ctx context.Context, last int64) <-chan *binlog.Entity {
-	chl := make(chan *binlog.Entity)
+func (s *fakePullable) PullCommitBinlog(ctx context.Context, last int64) <-chan []byte {
+	chl := make(chan []byte)
 	go func() {
-		for i := int64(0); i < 3; i++ {
-			chl <- &binlog.Entity{
-				Payload: []byte(fmt.Sprintf("payload_%d", i)),
-				Meta: binlog.Meta{
-					StartTs:  i,
-					CommitTs: i + 100,
-				},
-			}
+		for i := 0; i < 3; i++ {
+			chl <- []byte(fmt.Sprintf("payload_%d", i))
 		}
 		close(chl)
 	}()
@@ -461,7 +452,7 @@ type gcBinlogFileSuite struct{}
 var _ = Suite(&gcBinlogFileSuite{})
 
 func (s *gcBinlogFileSuite) TestShouldGCMinDrainerTSO(c *C) {
-	store := dummyStorage{}
+	storage := dummyStorage{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -469,19 +460,19 @@ func (s *gcBinlogFileSuite) TestShouldGCMinDrainerTSO(c *C) {
 	registry := node.NewEtcdRegistry(cli, time.Second)
 	server := Server{
 		ctx:        ctx,
-		storage:    &store,
+		storage:    &storage,
 		node:       &pumpNode{EtcdRegistry: registry},
 		gcDuration: time.Hour,
 	}
 
 	millisecond := time.Now().Add(-server.gcDuration).UnixNano() / 1000 / 1000
-	gcTS := int64(storage.EncodeTSO(millisecond))
+	gcTS := int64(oracle.EncodeTSO(millisecond))
 
 	inAlertGCMS := millisecond + 10*time.Minute.Nanoseconds()/1000/1000
-	inAlertGCTS := int64(storage.EncodeTSO(inAlertGCMS))
+	inAlertGCTS := int64(oracle.EncodeTSO(inAlertGCMS))
 
 	outAlertGCMS := millisecond + (earlyAlertGC+10*time.Minute).Nanoseconds()/1000/1000
-	outAlertGCTS := int64(storage.EncodeTSO(outAlertGCMS))
+	outAlertGCTS := int64(oracle.EncodeTSO(outAlertGCMS))
 
 	mustUpdateNode(ctx, registry, "drainers/1", &node.Status{MaxCommitTS: inAlertGCTS, State: node.Online})
 	mustUpdateNode(ctx, registry, "drainers/2", &node.Status{MaxCommitTS: 1002, State: node.Online})
@@ -503,7 +494,7 @@ func (s *gcBinlogFileSuite) TestShouldGCMinDrainerTSO(c *C) {
 	time.Sleep(1000 * gcInterval)
 	cancel()
 
-	c.Assert(store.gcTS, GreaterEqual, gcTS)
+	c.Assert(storage.gcTS, GreaterEqual, gcTS)
 	// todo: add in and out of alert test while binlog has failpoint
 }
 
@@ -571,7 +562,7 @@ func (pc *mockPdCli) Close() {}
 type newServerSuite struct {
 	origGetPdClientFn         func(string, security.Config) (pd.Client, error)
 	origNewKVStoreFn          func(string) (kv.Storage, error)
-	origNewTiKVLockResolverFn func([]string, config.Security, ...pd.ClientOption) (*txnlock.LockResolver, error)
+	origNewTiKVLockResolverFn func([]string, config.Security, ...pd.ClientOption) (*tikv.LockResolver, error)
 	cfg                       *Config
 }
 
@@ -632,7 +623,7 @@ func (s *newServerSuite) TestCreateNewPumpServer(c *C) {
 	getPdClientFn = func(string, security.Config) (pd.Client, error) {
 		return &mockPdCli{}, nil
 	}
-	newTiKVLockResolverFn = func([]string, config.Security, ...pd.ClientOption) (*txnlock.LockResolver, error) {
+	newTiKVLockResolverFn = func([]string, config.Security, ...pd.ClientOption) (*tikv.LockResolver, error) {
 		return nil, nil
 	}
 	newKVStoreFn = func(path string) (kv.Storage, error) {
@@ -673,8 +664,8 @@ func (s *startStorage) MaxCommitTS() int64                          { return 0 }
 func (s *startStorage) GetBinlog(ts int64) (*binlog.Binlog, error) {
 	return nil, errors.New("server_test")
 }
-func (s *startStorage) PullCommitBinlog(ctx context.Context, last int64) <-chan *binlog.Entity {
-	return make(chan *binlog.Entity)
+func (s *startStorage) PullCommitBinlog(ctx context.Context, last int64) <-chan []byte {
+	return make(chan []byte)
 }
 func (s *startStorage) Close() error {
 	<-s.sig

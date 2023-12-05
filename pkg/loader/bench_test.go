@@ -15,6 +15,7 @@ package loader
 
 import (
 	"database/sql"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -181,7 +182,7 @@ func createTable(db *sql.DB, loader Loader) error {
 }
 
 func dropTable(db *sql.DB, loader Loader) error {
-	sql := "drop table if exists test1"
+	sql := fmt.Sprintf("drop table if exists test1")
 	loader.Input() <- NewDDLTxn("test", "test1", sql)
 	return nil
 }

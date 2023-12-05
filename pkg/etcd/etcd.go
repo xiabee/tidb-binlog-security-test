@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
-	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/clientv3"
 	"golang.org/x/net/context"
 )
 
@@ -47,10 +47,9 @@ func NewClient(cli *clientv3.Client, root string) *Client {
 // NewClientFromCfg returns a wrapped etcd client
 func NewClientFromCfg(endpoints []string, dialTimeout time.Duration, root string, security *tls.Config) (*Client, error) {
 	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:        endpoints,
-		DialTimeout:      dialTimeout,
-		TLS:              security,
-		AutoSyncInterval: 30 * time.Second,
+		Endpoints:   endpoints,
+		DialTimeout: dialTimeout,
+		TLS:         security,
 	})
 	if err != nil {
 		return nil, errors.Trace(err)

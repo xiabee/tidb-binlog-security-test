@@ -19,8 +19,8 @@ import (
 
 	. "github.com/pingcap/check"
 	"github.com/pingcap/errors"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/tests/v3/integration"
+	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/integration"
 	"golang.org/x/net/context"
 )
 
@@ -31,8 +31,6 @@ var (
 )
 
 func TestClient(t *testing.T) {
-	integration.BeforeTest(t)
-
 	ctx, etcdCli, etcdMockCluster = testSetup(t)
 	defer func() {
 		etcdMockCluster.Terminate(t)

@@ -22,9 +22,9 @@ import (
 
 	. "github.com/pingcap/check"
 	"github.com/pingcap/log"
+	"github.com/pingcap/parser/model"
+	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/types"
 	pd "github.com/tikv/pd/client"
 	"go.uber.org/zap/zapcore"
@@ -76,19 +76,19 @@ func (s *utilSuite) TestToColumnTypeMap(c *C) {
 	cols := []*model.ColumnInfo{
 		{
 			ID:        10,
-			FieldType: *types.NewFieldType(mysql.TypeVarchar),
+			FieldType: types.FieldType{Tp: mysql.TypeVarchar},
 		},
 		{
 			ID:        1984,
-			FieldType: *types.NewFieldType(mysql.TypeLong),
+			FieldType: types.FieldType{Tp: mysql.TypeLong},
 		},
 	}
 	colTypes := ToColumnTypeMap(cols)
 	c.Assert(colTypes, HasLen, 2)
 	c.Assert(colTypes, HasKey, int64(10))
-	c.Assert(colTypes[10].GetType(), Equals, mysql.TypeVarchar)
+	c.Assert(colTypes[10].Tp, Equals, mysql.TypeVarchar)
 	c.Assert(colTypes, HasKey, int64(1984))
-	c.Assert(colTypes[1984].GetType(), Equals, mysql.TypeLong)
+	c.Assert(colTypes[1984].Tp, Equals, mysql.TypeLong)
 }
 
 func (s *utilSuite) TestStdLogger(c *C) {

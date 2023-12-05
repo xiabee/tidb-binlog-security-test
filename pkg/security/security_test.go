@@ -113,6 +113,9 @@ func (s *testSecuritySuite) TestToTLSConfig(c *C) {
 
 	config, err := dummyConfig.ToTLSConfig()
 	c.Assert(err, IsNil)
+	c.Assert(config, NotNil)
+	c.Assert(config.RootCAs.Subjects(), HasLen, 1)
+
 	cert, err := config.GetCertificate(nil)
 	c.Assert(err, IsNil)
 	sslKey, ok := cert.PrivateKey.(*ecdsa.PrivateKey)

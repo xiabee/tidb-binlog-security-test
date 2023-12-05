@@ -25,13 +25,12 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	tmysql "github.com/pingcap/parser/mysql"
+	"github.com/pingcap/tidb-binlog/pkg/util"
+	tddl "github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/infoschema"
-	tmysql "github.com/pingcap/tidb/parser/mysql"
-	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
-
-	"github.com/pingcap/tidb-binlog/pkg/util"
 )
 
 var (
@@ -156,7 +155,7 @@ func IgnoreDDLError(err error) bool {
 	case infoschema.ErrDatabaseExists.Code(), infoschema.ErrDatabaseNotExists.Code(), infoschema.ErrDatabaseDropExists.Code(),
 		infoschema.ErrTableExists.Code(), infoschema.ErrTableNotExists.Code(), infoschema.ErrTableDropExists.Code(),
 		infoschema.ErrColumnExists.Code(), infoschema.ErrColumnNotExists.Code(), infoschema.ErrIndexExists.Code(),
-		infoschema.ErrKeyNotExists.Code(), dbterror.ErrCantDropFieldOrKey.Code(), tmysql.ErrDupKeyName:
+		infoschema.ErrKeyNotExists.Code(), tddl.ErrCantDropFieldOrKey.Code(), tmysql.ErrDupKeyName:
 		return true
 	default:
 		return false
@@ -200,27 +199,6 @@ func GetTidbPosition(db *sql.DB) (int64, error) {
 	}
 
 	ts, err := strconv.ParseInt(string(fields["Position"]), 10, 64)
-	if err != nil {
-		return 0, errors.Trace(err)
-	}
-	return ts, nil
-}
-
-// GetOraclePosition return oracle scn
-func GetOraclePosition(db *sql.DB) (int64, error) {
-	rows, err := db.Query("select dbms_flashback.get_system_change_number as current_scn from dual")
-	if err != nil {
-		return 0, errors.Trace(err)
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return 0, errors.New("get oracle position failed")
-	}
-	fields, err := ScanRow(rows)
-	if err != nil {
-		return 0, errors.Trace(err)
-	}
-	ts, err := strconv.ParseInt(string(fields["CURRENT_SCN"]), 10, 64)
 	if err != nil {
 		return 0, errors.Trace(err)
 	}

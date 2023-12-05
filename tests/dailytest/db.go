@@ -23,8 +23,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/parser/mysql"
-
+	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb-binlog/tests/util"
 )
 
@@ -219,9 +218,9 @@ func genRowData(table *table) (string, error) {
 func genColumnData(table *table, column *column) (string, error) {
 	tp := column.tp
 	_, isUnique := table.uniqIndices[column.name]
-	isUnsigned := mysql.HasUnsignedFlag(tp.GetFlag())
+	isUnsigned := mysql.HasUnsignedFlag(tp.Flag)
 
-	switch tp.GetType() {
+	switch tp.Tp {
 	case mysql.TypeBit:
 		if randInt(0, 1) == 0 {
 			return "b'0'", nil
@@ -278,9 +277,9 @@ func genColumnData(table *table, column *column) (string, error) {
 	case mysql.TypeVarchar, mysql.TypeString, mysql.TypeTinyBlob, mysql.TypeBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob:
 		data := []byte{'\''}
 		if isUnique {
-			data = append(data, []byte(column.data.uniqString(tp.GetFlen()))...)
+			data = append(data, []byte(column.data.uniqString(tp.Flen))...)
 		} else {
-			data = append(data, []byte(randString(randInt(1, tp.GetFlen())))...)
+			data = append(data, []byte(randString(randInt(1, tp.Flen)))...)
 		}
 
 		data = append(data, '\'')

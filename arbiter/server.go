@@ -26,8 +26,8 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb-binlog/pkg/loader"
 	"github.com/pingcap/tidb-binlog/pkg/util"
-	"github.com/pingcap/tidb/tidb-binlog/driver/reader"
-	"github.com/tikv/client-go/v2/oracle"
+	"github.com/pingcap/tidb-tools/tidb-binlog/driver/reader"
+	"github.com/pingcap/tidb/store/tikv/oracle"
 	"go.uber.org/zap"
 )
 
@@ -297,7 +297,7 @@ func syncBinlogs(ctx context.Context, source <-chan *reader.Message, ld loader.L
 		}
 		receivedTs = msg.Binlog.CommitTs
 
-		txn, err := loader.SecondaryBinlogToTxn(msg.Binlog, nil, false)
+		txn, err := loader.SecondaryBinlogToTxn(msg.Binlog)
 		if err != nil {
 			log.Error("transfer binlog failed, program will stop handling data from loader", zap.Error(err))
 			return err

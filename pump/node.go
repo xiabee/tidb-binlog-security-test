@@ -26,18 +26,16 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	pb "github.com/pingcap/tipb/go-binlog"
-	"go.uber.org/zap"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
-
 	"github.com/pingcap/tidb-binlog/pkg/etcd"
 	"github.com/pingcap/tidb-binlog/pkg/file"
 	"github.com/pingcap/tidb-binlog/pkg/flags"
 	"github.com/pingcap/tidb-binlog/pkg/node"
 	"github.com/pingcap/tidb-binlog/pkg/util"
+	pb "github.com/pingcap/tipb/go-binlog"
+	"go.uber.org/zap"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -176,13 +174,11 @@ func (p *pumpNode) Notify(ctx context.Context) error {
 		grpc.WithBlock(),
 	}
 
-	var tlsCredential credentials.TransportCredentials
 	if p.tls != nil {
-		tlsCredential = credentials.NewTLS(p.tls)
+		dialerOpts = append(dialerOpts, grpc.WithTransportCredentials(credentials.NewTLS(p.tls)))
 	} else {
-		tlsCredential = insecure.NewCredentials()
+		dialerOpts = append(dialerOpts, grpc.WithInsecure())
 	}
-	dialerOpts = append(dialerOpts, grpc.WithTransportCredentials(tlsCredential))
 
 	for _, c := range drainers {
 		if c.State != node.Online {
@@ -214,8 +210,7 @@ func notifyDrainer(ctx context.Context, c *node.Status, dialerOpts []grpc.DialOp
 
 	err = util.RetryContext(ctx, 3, time.Second, 2, func(ictx context.Context) error {
 		log.Info("Notifying drainer", zap.String("addr", c.Addr))
-		in := &pb.NotifyReq{}
-		_, err := drainer.Notify(ictx, in)
+		_, err := drainer.Notify(ictx, nil)
 		return err
 	})
 	if err != nil {

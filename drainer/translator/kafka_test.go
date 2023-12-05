@@ -16,12 +16,11 @@ package translator
 import (
 	"fmt"
 
-	//nolint
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/check"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/parser/mysql"
-	obinlog "github.com/pingcap/tidb/tidb-binlog/proto/go-binlog"
+	"github.com/pingcap/parser/model"
+	"github.com/pingcap/parser/mysql"
+	obinlog "github.com/pingcap/tidb-tools/tidb-binlog/proto/go-binlog"
 	"github.com/pingcap/tidb/types"
 )
 
@@ -153,33 +152,27 @@ func (t *testKafkaSuite) TestGenTable(c *check.C) {
 	// primary key: (c1)
 	// unique key: (c2, c3)
 	// non-unique key: (c3)
-	tp1 := types.NewFieldType(mysql.TypeLong)
-	tp1.SetFlag(mysql.PriKeyFlag)
-	tp1.SetFlen(11)
-	tp1.SetDecimal(1)
-
-	tp2 := types.NewFieldType(mysql.TypeLong)
-	tp2.SetFlen(12)
-	tp2.SetDecimal(2)
-
-	tp3 := types.NewFieldType(mysql.TypeLong)
-	tp3.SetFlen(13)
-	tp3.SetDecimal(3)
-
 	info := &model.TableInfo{
 		Name: model.NewCIStr(table),
 		Columns: []*model.ColumnInfo{
 			{
-				Name:      model.NewCIStr("c1"),
-				FieldType: *tp1,
+				Name: model.NewCIStr("c1"),
+				FieldType: types.FieldType{
+					Flag: mysql.PriKeyFlag,
+					Tp:   mysql.TypeLong,
+				},
 			},
 			{
-				Name:      model.NewCIStr("c2"),
-				FieldType: *tp2,
+				Name: model.NewCIStr("c2"),
+				FieldType: types.FieldType{
+					Tp: mysql.TypeLong,
+				},
 			},
 			{
-				Name:      model.NewCIStr("c3"),
-				FieldType: *tp3,
+				Name: model.NewCIStr("c3"),
+				FieldType: types.FieldType{
+					Tp: mysql.TypeLong,
+				},
 			},
 		},
 		Indices: []*model.IndexInfo{
@@ -229,20 +222,14 @@ func (t *testKafkaSuite) TestGenTable(c *check.C) {
 				Name:         "c1",
 				IsPrimaryKey: true,
 				MysqlType:    "int",
-				Flen:         11,
-				Decimal:      1,
 			},
 			{
 				Name:      "c2",
 				MysqlType: "int",
-				Flen:      12,
-				Decimal:   2,
 			},
 			{
 				Name:      "c3",
 				MysqlType: "int",
-				Flen:      13,
-				Decimal:   3,
 			},
 		},
 		UniqueKeys: []*obinlog.Key{

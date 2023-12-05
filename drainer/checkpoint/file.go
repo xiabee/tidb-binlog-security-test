@@ -20,7 +20,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/pingcap/errors"
-
 	"github.com/pingcap/tidb-binlog/pkg/util"
 )
 
@@ -75,7 +74,7 @@ func (sp *FileCheckPoint) Load() error {
 	}
 	defer file.Close()
 
-	_, err = toml.NewDecoder(file).Decode(sp)
+	_, err = toml.DecodeReader(file, sp)
 	if err != nil {
 		return errors.Trace(err)
 	}
