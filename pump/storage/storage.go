@@ -28,17 +28,19 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/log"
-	pkgutil "github.com/pingcap/tidb-binlog/pkg/util"
 	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/store/tikv"
-	"github.com/pingcap/tidb/store/tikv/oracle"
 	pb "github.com/pingcap/tipb/go-binlog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/tikv/client-go/v2/oracle"
+	"github.com/tikv/client-go/v2/tikv"
+	"github.com/tikv/client-go/v2/txnkv/txnlock"
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
+
+	pkgutil "github.com/pingcap/tidb-binlog/pkg/util"
 )
 
 const (
@@ -47,6 +49,7 @@ const (
 	// if pump takes a long time to write binlog, pump will display the binlog meta information (unit: Second)
 	slowWriteThreshold               = 1.0
 	defaultStopWriteAtAvailableSpace = 10 * (1 << 30)
+	physicalShiftBits                = 18
 )
 
 var (
@@ -83,7 +86,7 @@ type Storage interface {
 	GetBinlog(ts int64) (binlog *pb.Binlog, err error)
 
 	// PullCommitBinlog return the chan to consume the binlog
-	PullCommitBinlog(ctx context.Context, last int64) <-chan []byte
+	PullCommitBinlog(ctx context.Context, last int64) <-chan *pb.Entity
 
 	Close() error
 }
@@ -100,7 +103,7 @@ type Append struct {
 	sorter         *sorter
 	tiStore        kv.Storage
 	helper         *Helper
-	tiLockResolver *tikv.LockResolver
+	tiLockResolver *txnlock.LockResolver
 	latestTS       int64
 
 	gcWorking     int32
@@ -127,7 +130,7 @@ func NewAppend(dir string, options *Options) (append *Append, err error) {
 
 // NewAppendWithResolver returns a instance of Append
 // if tiStore and tiLockResolver is not nil, we will try to query tikv to know whether a txn is committed
-func NewAppendWithResolver(dir string, options *Options, tiStore kv.Storage, tiLockResolver *tikv.LockResolver) (append *Append, err error) {
+func NewAppendWithResolver(dir string, options *Options, tiStore kv.Storage, tiLockResolver *txnlock.LockResolver) (append *Append, err error) {
 	if options == nil {
 		options = DefaultOptions()
 	}
@@ -687,7 +690,7 @@ func (a *Append) GC(ts int64) {
 		defer atomic.StoreInt32(&a.gcWorking, 0)
 		// for commit binlog TS ts_c, we may need to get the according P binlog ts_p(ts_p < ts_c
 		// so we forward a little bit to make sure we can get the according P binlog
-		a.doGCTS(ts - int64(oracle.EncodeTSO(maxTxnTimeoutSecond*1000)))
+		a.doGCTS(ts - int64(EncodeTSO(maxTxnTimeoutSecond*1000)))
 	}()
 }
 
@@ -1109,7 +1112,7 @@ func (a *Append) feedPreWriteValue(cbinlog *pb.Binlog) error {
 }
 
 // PullCommitBinlog return commit binlog  > last
-func (a *Append) PullCommitBinlog(ctx context.Context, last int64) <-chan []byte {
+func (a *Append) PullCommitBinlog(ctx context.Context, last int64) <-chan *pb.Entity {
 	log.Debug("new PullCommitBinlog", zap.Int64("last ts", last))
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1127,7 +1130,7 @@ func (a *Append) PullCommitBinlog(ctx context.Context, last int64) <-chan []byte
 		last = gcTS
 	}
 
-	values := make(chan []byte, 5)
+	values := make(chan *pb.Entity, 5)
 
 	irange := &util.Range{
 		Start: encodeTSKey(0),
@@ -1218,8 +1221,16 @@ func (a *Append) PullCommitBinlog(ctx context.Context, last int64) <-chan []byte
 					return
 				}
 
+				entity := &pb.Entity{
+					Payload: value,
+					Meta: pb.Meta{
+						StartTs:  binlog.StartTs,
+						CommitTs: binlog.CommitTs,
+					},
+				}
+
 				select {
-				case values <- value:
+				case values <- entity:
 					log.Debug("send value success")
 				case <-ctx.Done():
 					iter.Release()
@@ -1450,4 +1461,10 @@ func (a *Append) writeBatchToKV(bufReqs []*request) error {
 // AllMatched implement Storage.AllMatched
 func (a *Append) AllMatched() bool {
 	return a.sorter.allMatched()
+}
+
+// EncodeTSO encodes a millisecond into tso.
+// TODO: Use the function defined in github.com/tikv/client-go/v2.
+func EncodeTSO(ts int64) uint64 {
+	return uint64(ts) << physicalShiftBits
 }

@@ -23,19 +23,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pingcap/tidb-binlog/drainer/loopbacksync"
-
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb-binlog/pkg/util"
+	"github.com/pingcap/tidb/parser"
+	"github.com/pingcap/tidb/parser/ast"
+	tmysql "github.com/pingcap/tidb/parser/mysql"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/pingcap/parser"
-	"github.com/pingcap/parser/ast"
-	tmysql "github.com/pingcap/parser/mysql"
+	"github.com/pingcap/tidb-binlog/drainer/loopbacksync"
 	pkgsql "github.com/pingcap/tidb-binlog/pkg/sql"
+	"github.com/pingcap/tidb-binlog/pkg/util"
 )
 
 const (
@@ -68,6 +67,8 @@ type loaderImpl struct {
 	// we can get table info from downstream db
 	// like column name, pk & uk
 	db *gosql.DB
+	//downStream db type, mysql,tidb,oracle
+	destDBType DBType
 	// only set for test
 	getTableInfoFromDB func(db *gosql.DB, schema string, table string) (info *tableInfo, err error)
 	opts               options
@@ -129,6 +130,7 @@ type options struct {
 	enableDispatch   bool
 	enableCausality  bool
 	merge            bool
+	destDBType       DBType
 }
 
 var defaultLoaderOptions = options{
@@ -141,6 +143,7 @@ var defaultLoaderOptions = options{
 	enableDispatch:   true,
 	enableCausality:  true,
 	merge:            false,
+	destDBType:       MysqlDB,
 }
 
 // A Option sets options such batch size, worker count etc.
@@ -191,7 +194,22 @@ func Merge(v bool) Option {
 	}
 }
 
-//SetloopBackSyncInfo set loop back sync info of loader
+// DestinationDBType set destDBType option.
+func DestinationDBType(t string) Option {
+	destDBType := DBTypeUnknown
+	if t == "oracle" {
+		destDBType = OracleDB
+	} else if t == "tidb" {
+		destDBType = TiDB
+	} else if t == "mysql" {
+		destDBType = MysqlDB
+	}
+	return func(o *options) {
+		o.destDBType = destDBType
+	}
+}
+
+// SetloopBackSyncInfo set loop back sync info of loader
 func SetloopBackSyncInfo(loopBackSyncInfo *loopbacksync.LoopBackSync) Option {
 	return func(o *options) {
 		o.loopBackSyncInfo = loopBackSyncInfo
@@ -244,11 +262,15 @@ func NewLoader(db *gosql.DB, opt ...Option) (Loader, error) {
 		successTxn:         make(chan *Txn),
 		merge:              opts.merge,
 		saveAppliedTS:      opts.saveAppliedTS,
+		destDBType:         opts.destDBType,
 
 		ctx:    ctx,
 		cancel: cancel,
 	}
-
+	if opts.destDBType == OracleDB {
+		s.getTableInfoFromDB = getOracleTableInfo
+		fGetAppliedTS = getOracleAppliedTS
+	}
 	db.SetMaxOpenConns(opts.workerCount)
 	db.SetMaxIdleConns(opts.workerCount)
 
@@ -377,11 +399,17 @@ func needRefreshTableInfo(sql string) bool {
 }
 
 func (s *loaderImpl) execDDL(ddl *DDL) error {
-	log.Debug("exec ddl", zap.Reflect("ddl", ddl))
+	log.Debug("exec ddl", zap.Reflect("ddl", ddl), zap.Bool("shouldSkip", ddl.ShouldSkip))
 	if ddl.ShouldSkip {
 		return nil
 	}
+	if s.destDBType == OracleDB {
+		return s.processOracleDDL(ddl)
+	}
+	return s.processMysqlDDL(ddl)
+}
 
+func (s *loaderImpl) processMysqlDDL(ddl *DDL) error {
 	err := util.RetryContext(s.ctx, maxDDLRetryCount, execDDLRetryWait, 1, func(context.Context) error {
 		tx, err := s.db.Begin()
 		if err != nil {
@@ -398,9 +426,20 @@ func (s *loaderImpl) execDDL(ddl *DDL) error {
 			}
 		}
 
-		if _, err = tx.Exec(ddl.SQL); err != nil {
+		sql, err := removeDDLPlacementOptions(ddl.SQL)
+		if err != nil {
+			log.Error("process sql failed", zap.String("sql", sql), zap.Error(err))
+			sql = ddl.SQL
+		}
+
+		if sql == "" {
+			log.Info("skip ddl with all placement options", zap.String("sql", ddl.SQL))
+			return tx.Commit()
+		}
+
+		if _, err = tx.Exec(sql); err != nil {
 			if rbErr := tx.Rollback(); rbErr != nil {
-				log.Error("Rollback failed", zap.String("sql", ddl.SQL), zap.Error(rbErr))
+				log.Error("Rollback failed", zap.String("sql", sql), zap.Error(rbErr))
 			}
 			return err
 		}
@@ -409,7 +448,7 @@ func (s *loaderImpl) execDDL(ddl *DDL) error {
 			return err
 		}
 
-		log.Info("exec ddl success", zap.String("sql", ddl.SQL))
+		log.Info("exec ddl success", zap.String("sql", sql))
 		return nil
 	})
 
@@ -418,6 +457,52 @@ func (s *loaderImpl) execDDL(ddl *DDL) error {
 	}
 
 	return errors.Trace(err)
+}
+
+func (s *loaderImpl) processOracleDDL(ddl *DDL) error {
+	ddlStmt := ddl.SQL
+	newStmt := ""
+	if isTruncateTableStmt(ddlStmt) {
+		newStmt = fmt.Sprintf("BEGIN %s.do_truncate('%s.%s','');END;", ddl.Database, ddl.Database, ddl.Table)
+	} else {
+		log.Warn("oracle meet unsupported ddl", zap.String("ddl", ddlStmt))
+		return nil
+	}
+	err := util.RetryContext(s.ctx, maxDDLRetryCount, execDDLRetryWait, 1, func(context.Context) error {
+		newStmt := newStmt
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(newStmt); err != nil {
+			log.Error("DDL exec failed.", zap.String("old sql", ddl.SQL), zap.String("new ddl sql", newStmt), zap.Error(err))
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Error("Rollback DDL failed", zap.String("old sql", ddl.SQL), zap.String("new ddl sql", newStmt), zap.Error(rbErr))
+			}
+			return err
+		}
+
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+
+		log.Info("exec oracle ddl success", zap.String("sql", ddl.SQL), zap.String("new ddl", newStmt))
+		return nil
+	})
+	if err == nil {
+		return nil
+	}
+	return errors.Trace(err)
+}
+
+func isTruncateTableStmt(sql string) bool {
+	stmt, err := parser.New().ParseOneStmt(sql, "", "")
+	if err != nil {
+		log.Error("parse sql failed", zap.String("sql", sql), zap.Error(err))
+		return false
+	}
+	_, ok := stmt.(*ast.TruncateTableStmt)
+	return ok
 }
 
 func (s *loaderImpl) execByHash(executor *executor, byHash [][]*DML) error {
@@ -672,7 +757,11 @@ func filterGeneratedCols(dml *DML) {
 }
 
 func (s *loaderImpl) getExecutor() *executor {
-	e := newExecutor(s.db).withBatchSize(s.batchSize)
+	e := newExecutor(s.db).withBatchSize(s.batchSize).withDestDBType(s.destDBType)
+	if s.destDBType == OracleDB {
+		e.fTryRefreshTableErr = tryRefreshTableOracleErr
+		e.fSingleExec = e.singleOracleExec
+	}
 	if s.syncMode == SyncPartialColumn {
 		e = e.withRefreshTableInfo(s.refreshTableInfo)
 	}
@@ -727,6 +816,14 @@ func (b *batchManager) execAccumulatedDMLs() (err error) {
 
 	if b.fDMLsSuccessCallback != nil {
 		b.fDMLsSuccessCallback(b.txns...)
+	}
+
+	// set elements to nil for gc
+	for i := range b.txns {
+		b.txns[i] = nil
+	}
+	for i := range b.dmls {
+		b.dmls[i] = nil
 	}
 	b.txns = b.txns[:0]
 	b.dmls = b.dmls[:0]
@@ -873,6 +970,15 @@ func getAppliedTS(db *gosql.DB) int64 {
 		if !ok || int(errCode) != tmysql.ErrUnknown {
 			log.Warn("get ts from secondary cluster failed", zap.Error(err))
 		}
+		return 0
+	}
+	return appliedTS
+}
+
+func getOracleAppliedTS(db *gosql.DB) int64 {
+	appliedTS, err := pkgsql.GetOraclePosition(db)
+	if err != nil {
+		log.Warn("get ts from oracle failed.", zap.Error(err))
 		return 0
 	}
 	return appliedTS

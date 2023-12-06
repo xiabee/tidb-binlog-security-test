@@ -20,7 +20,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/parser/mysql"
+	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/types"
 )
 
@@ -145,10 +145,7 @@ func doDDLProcess(table *table, db *sql.DB) {
 
 	col = &column{
 		name: colName,
-		tp: &types.FieldType{
-			Tp:   mysql.TypeVarchar,
-			Flen: 45,
-		},
+		tp:   types.NewFieldTypeBuilder().SetType(mysql.TypeVarchar).SetFlen(45).BuildP(),
 	}
 
 	newCols := make([]*column, 0, len(table.columns)+1)

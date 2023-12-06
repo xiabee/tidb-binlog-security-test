@@ -250,8 +250,10 @@ func (as *AppendSuit) testWriteBinlogAndPullBack(c *check.C, prewriteValueSize i
 			select {
 			case value := <-values:
 				getBinlog := new(pb.Binlog)
-				err := getBinlog.Unmarshal(value)
+				err := getBinlog.Unmarshal(value.Payload)
 				c.Assert(err, check.IsNil)
+				c.Assert(getBinlog.StartTs, check.Equals, value.Meta.StartTs)
+				c.Assert(getBinlog.CommitTs, check.Equals, value.Meta.CommitTs)
 				binlogs = append(binlogs, getBinlog)
 				if len(binlogs) == int(binlogNum) {
 					break PullLoop
@@ -431,7 +433,7 @@ func (as *AppendSuit) TestNoSpace(c *check.C) {
 
 func (as *AppendSuit) TestResolve(c *check.C) {
 	// TODO test the case we query tikv to know weather a txn a commit
-	// is there a fake or mock kv.Storage and tikv.LockResolver to easy the test?
+	// is there a fake or mock kv.Storage and txnlock.LockResolver to easy the test?
 }
 
 func (as *AppendSuit) TestWriteCBinlog(c *check.C) {

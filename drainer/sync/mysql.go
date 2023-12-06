@@ -14,18 +14,23 @@
 package sync
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"sync"
-
-	"github.com/pingcap/tidb-binlog/drainer/loopbacksync"
+	"time"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
+	"github.com/pingcap/tidb-tools/pkg/dbutil"
+	"github.com/pingcap/tidb/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
+
+	"github.com/pingcap/tidb-binlog/drainer/loopbacksync"
 	"github.com/pingcap/tidb-binlog/drainer/relay"
 	"github.com/pingcap/tidb-binlog/drainer/translator"
 	"github.com/pingcap/tidb-binlog/pkg/loader"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 var _ Syncer = &MysqlSyncer{}
@@ -59,7 +64,8 @@ func CreateLoader(
 ) (ld loader.Loader, err error) {
 
 	var opts []loader.Option
-	opts = append(opts, loader.WorkerCount(worker), loader.BatchSize(batchSize), loader.SaveAppliedTS(destDBType == "tidb"), loader.SetloopBackSyncInfo(info))
+	opts = append(opts, loader.DestinationDBType(destDBType), loader.WorkerCount(worker), loader.BatchSize(batchSize),
+		loader.SaveAppliedTS(destDBType == "tidb" || destDBType == "oracle"), loader.SetloopBackSyncInfo(info))
 	if queryHistogramVec != nil {
 		opts = append(opts, loader.Metrics(&loader.MetricsGroup{
 			QueryHistogramVec: queryHistogramVec,
@@ -131,11 +137,20 @@ func NewMysqlSyncer(
 		return nil, errors.Trace(err)
 	}
 
+	tzStr := ""
+	if len(cfg.Params) > 0 {
+		tzStr = cfg.Params["time_zone"]
+	}
+	timeZone, err := str2TimezoneOrFromDB(tzStr, db)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
 	s := &MysqlSyncer{
 		db:         db,
 		loader:     loader,
 		relayer:    relayer,
-		baseSyncer: newBaseSyncer(tableInfoGetter),
+		baseSyncer: newBaseSyncer(tableInfoGetter, timeZone),
 	}
 
 	go s.run()
@@ -166,6 +181,57 @@ func relaxSQLMode(db *sql.DB) (oldMode string, newMode string, err error) {
 	return
 }
 
+func str2TimezoneOrFromDB(tzStr string, db *sql.DB) (*time.Location, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var err error
+	if len(tzStr) == 0 {
+		dur, err := dbutil.GetTimeZoneOffset(ctx, db)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+		tzStr = dbutil.FormatTimeZoneOffset(dur)
+	}
+	if tzStr == "SYSTEM" || tzStr == "Local" {
+		return nil, errors.New("'SYSTEM' or 'Local' time_zone is not supported")
+	}
+
+	loc, err := time.LoadLocation(tzStr)
+	if err == nil {
+		return loc, nil
+	}
+
+	// The value can be given as a string indicating an offset from UTC, such as '+10:00' or '-6:00'.
+	// The time zone's value should in [-12:59,+14:00].
+	// See: https://dev.mysql.com/doc/refman/8.0/en/time-zone-support.html#time-zone-variables
+	if strings.HasPrefix(tzStr, "+") || strings.HasPrefix(tzStr, "-") {
+		d, err := types.ParseDuration(nil, tzStr[1:], 0)
+		if err == nil {
+			if tzStr[0] == '-' {
+				if d.Duration > 12*time.Hour+59*time.Minute {
+					return nil, errors.Errorf("invalid timezone %s", tzStr)
+				}
+			} else {
+				if d.Duration > 14*time.Hour {
+					return nil, errors.Errorf("invalid timezone %s", tzStr)
+				}
+			}
+
+			ofst := int(d.Duration / time.Second)
+			if tzStr[0] == '-' {
+				ofst = -ofst
+			}
+			name := dbutil.FormatTimeZoneOffset(d.Duration)
+			return time.FixedZone(name, ofst), nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	log.Info("use timezone", zap.String("location", loc.String()))
+	return loc, nil
+}
+
 // SetSafeMode make the MysqlSyncer to use safe mode or not
 func (m *MysqlSyncer) SetSafeMode(mode bool) bool {
 	m.loader.SetSafeMode(mode)
@@ -183,7 +249,7 @@ func (m *MysqlSyncer) Sync(item *Item) error {
 		item.RelayLogPos = pos
 	}
 
-	txn, err := translator.TiBinlogToTxn(m.tableInfoGetter, item.Schema, item.Table, item.Binlog, item.PrewriteValue, item.ShouldSkip)
+	txn, err := translator.TiBinlogToTxn(m.tableInfoGetter, item.Schema, item.Table, item.Binlog, item.PrewriteValue, item.ShouldSkip, m.timeZone)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -205,7 +271,7 @@ func (m *MysqlSyncer) Close() error {
 
 	if m.relayer != nil {
 		closeRelayerErr := m.relayer.Close()
-		if err != nil {
+		if err == nil {
 			err = closeRelayerErr
 		}
 	}

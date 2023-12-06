@@ -16,9 +16,9 @@ package reparo
 import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/parser"
-	"github.com/pingcap/parser/ast"
 	"github.com/pingcap/tidb-binlog/pkg/filter"
+	"github.com/pingcap/tidb/parser"
+	"github.com/pingcap/tidb/parser/ast"
 	"go.uber.org/zap"
 )
 
@@ -64,6 +64,8 @@ func parseDDL(sql string) (node ast.Node, table filter.TableName, err error) {
 			setSchemaIfExists(&table, v.Table.Schema.O, v.Table.Name.O)
 		case *ast.DropIndexStmt:
 			setSchemaIfExists(&table, v.Table.Schema.O, v.Table.Name.O)
+		case *ast.CreateViewStmt:
+			setSchemaIfExists(&table, v.ViewName.Schema.O, v.ViewName.Name.O)
 		}
 	}
 

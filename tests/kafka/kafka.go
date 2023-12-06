@@ -25,7 +25,7 @@ import (
 	"github.com/pingcap/tidb-binlog/pkg/loader"
 	"github.com/pingcap/tidb-binlog/tests/dailytest"
 	"github.com/pingcap/tidb-binlog/tests/util"
-	"github.com/pingcap/tidb-tools/tidb-binlog/driver/reader"
+	"github.com/pingcap/tidb/tidb-binlog/driver/reader"
 )
 
 // drainer -> kafka, syn data from kafka to downstream TiDB, and run the dailytest
@@ -87,7 +87,7 @@ func main() {
 		for msg := range breader.Messages() {
 			str := msg.Binlog.String()
 			log.S().Debugf("recv: %.2000s", str)
-			txn, err := loader.SecondaryBinlogToTxn(msg.Binlog)
+			txn, err := loader.SecondaryBinlogToTxn(msg.Binlog, nil, false)
 			if err != nil {
 				log.S().Fatal(err)
 			}

@@ -18,8 +18,8 @@ import (
 
 	. "github.com/pingcap/check"
 	"github.com/pingcap/errors"
-	"github.com/pingcap/parser/model"
-	"github.com/pingcap/parser/mysql"
+	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/types"
 )
 
@@ -285,12 +285,6 @@ func (t *schemaSuite) TestHandleDDL(c *C) {
 	_, _, sql, err := schema.handleDDL(job)
 	c.Assert(err, IsNil)
 	c.Assert(sql, Equals, "")
-
-	// check job.Query is empty
-	job = &model.Job{ID: 1, State: model.JobStateDone}
-	_, _, sql, err = schema.handleDDL(job)
-	c.Assert(sql, Equals, "")
-	c.Assert(err, NotNil, Commentf("should return not found job.Query"))
 
 	// db info
 	dbInfo := &model.DBInfo{

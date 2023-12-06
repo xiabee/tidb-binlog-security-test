@@ -27,7 +27,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/parser/mysql"
+	"github.com/pingcap/tidb/parser/mysql"
 	"go.uber.org/zap"
 
 	dsync "github.com/pingcap/tidb-binlog/drainer/sync"
@@ -57,6 +57,39 @@ var (
 	supportedCompressors      = [...]string{"gzip"}
 	newZKFromConnectionString = zk.NewFromConnectionString
 )
+
+// TaskTableMigrateRule defines upstream table to downstream migrate rules
+type TaskTableMigrateRule struct {
+	// filter rule name
+	BinlogFilterRule *[]string `toml:"binlog-filter-rule,omitempty" json:"binlog-filter-rule,omitempty"`
+
+	// source-related configuration
+	Source struct {
+		// schema name, wildcard support
+		Schema string `toml:"schema" json:"schema"`
+
+		// table name, wildcard support
+		Table string `toml:"table" json:"table"`
+	} `toml:"source" json:"source"`
+
+	// downstream-related configuration
+	Target *struct {
+		// schema name, does not support wildcards
+		Schema string `toml:"schema" json:"schema"`
+
+		// table name, does not support wildcards
+		Table string `toml:"table" json:"table"`
+	} `toml:"target,omitempty" json:"target,omitempty"`
+}
+
+// TaskBinLogFilterRule defines filtering rules at binlog level
+type TaskBinLogFilterRule struct {
+	// event type
+	IgnoreEvent *[]string `toml:"ignore-event,omitempty" json:"ignore-event,omitempty"`
+
+	// sql pattern to filter
+	IgnoreSQL *[]string `toml:"ignore-sql,omitempty" json:"ignore-sql,omitempty"`
+}
 
 // SyncerConfig is the Syncer's configuration.
 type SyncerConfig struct {
@@ -89,6 +122,13 @@ type SyncerConfig struct {
 	EnableCausalityFlag  *bool `toml:"-" json:"enable-detect-flag"`
 	DisableCausalityFile *bool `toml:"disable-detect" json:"disable-detect"`
 	EnableCausalityFile  *bool `toml:"enable-detect" json:"enable-detect"`
+	LoadSchemaSnapshot   bool  `toml:"load-schema-snapshot" json:"load-schema-snapshot"`
+
+	// v2 filter rules
+	CaseSensitive    bool                   `toml:"case-sensitive" json:"case-sensitive"`
+	TableMigrateRule []TaskTableMigrateRule `toml:"table-migrate-rule" json:"table-migrate-rule"`
+
+	BinlogFilterRule map[string]TaskBinLogFilterRule `toml:"binlog-filter-rule,omitempty" json:"binlog-filter-rule,omitempty"`
 }
 
 // EnableDispatch return true if enable dispatch.
@@ -213,6 +253,7 @@ func NewConfig() *Config {
 	fs.BoolVar(&cfg.SyncerCfg.SafeMode, "safe-mode", false, "enable safe mode to make syncer reentrant")
 	fs.BoolVar(cfg.SyncerCfg.DisableCausalityFlag, "disable-detect", false, "DEPRECATED, use enable-detect")
 	fs.BoolVar(cfg.SyncerCfg.EnableCausalityFlag, "enable-detect", true, "enable detect causality")
+	fs.BoolVar(&cfg.SyncerCfg.LoadSchemaSnapshot, "load-schema-snapshot", false, "init drainer schema info through pd meta interface, need to make sure checkpoint ts is not garbage collected in upstream")
 	fs.IntVar(&maxBinlogItemCount, "cache-binlog-count", defaultBinlogItemCount, "blurry count of binlogs in cache, limit cache size")
 	fs.IntVar(&cfg.SyncedCheckTime, "synced-check-time", defaultSyncedCheckTime, "if we can't detect new binlog after many minute, we think the all binlog is all synced")
 	fs.StringVar(new(string), "log-rotate", "", "DEPRECATED")

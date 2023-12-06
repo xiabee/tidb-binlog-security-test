@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"github.com/pingcap/check"
-	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb-binlog/pkg/loader"
 	pb "github.com/pingcap/tidb-binlog/proto/binlog"
+	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/util/codec"
 )
 
@@ -49,6 +49,16 @@ func (s *testTranslateSuite) TestPBBinlogToTxn(c *check.C) {
 				SQL:      "create table `db1`.`table1`(id int)",
 				Database: "db1",
 				Table:    "table1",
+			},
+		},
+		{
+			Tp:       pb.BinlogType_DDL,
+			DdlQuery: []byte("create view `db1`.`view1` as (select 1)"),
+		}: {
+			DDL: &loader.DDL{
+				SQL:      "create view `db1`.`view1` as (select 1)",
+				Database: "db1",
+				Table:    "view1",
 			},
 		},
 		{

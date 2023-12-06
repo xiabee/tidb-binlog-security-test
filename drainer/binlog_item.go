@@ -16,7 +16,7 @@ package drainer
 import (
 	"fmt"
 
-	"github.com/pingcap/parser/model"
+	"github.com/pingcap/tidb/parser/model"
 	pb "github.com/pingcap/tipb/go-binlog"
 )
 
@@ -50,7 +50,6 @@ func newBinlogItem(b *pb.Binlog, nodeID string) *binlogItem {
 	return itemp
 }
 
-//
 func (b *binlogItem) SetJob(job *model.Job) {
 	b.job = job
 }

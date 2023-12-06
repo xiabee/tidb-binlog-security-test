@@ -22,16 +22,18 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb-binlog/pkg/util"
-	"github.com/pingcap/tidb-binlog/pump"
-	"github.com/pingcap/tidb/store/tikv/oracle"
 	pb "github.com/pingcap/tipb/go-binlog"
+	"github.com/tikv/client-go/v2/oracle"
 	"go.uber.org/zap"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+
+	"github.com/pingcap/tidb-binlog/pkg/util"
+	"github.com/pingcap/tidb-binlog/pump"
 )
 
 const (
@@ -163,7 +165,8 @@ func (p *Pump) PullBinlog(pctx context.Context, last int64) chan MergeItem {
 			payloadSize := len(resp.Entity.Payload)
 			readBinlogSizeHistogram.WithLabelValues(p.nodeID).Observe(float64(payloadSize))
 			if len(resp.Entity.Payload) >= 10*1024*1024 {
-				log.Info("receive big size binlog", zap.String("size", humanize.Bytes(uint64(payloadSize))))
+				p.logger.Info("receive big size binlog before unmarshal", zap.String("size", humanize.Bytes(uint64(payloadSize))),
+					zap.Int64("start ts", resp.Entity.Meta.StartTs), zap.Int64("commit ts", resp.Entity.Meta.CommitTs))
 			}
 
 			binlog := new(pb.Binlog)
@@ -174,6 +177,7 @@ func (p *Pump) PullBinlog(pctx context.Context, last int64) chan MergeItem {
 				p.reportErr(pctx, err)
 				return
 			}
+			resp.Entity.Payload = nil // GC
 
 			millisecond := time.Now().UnixNano()/1000000 - oracle.ExtractPhysical(uint64(binlog.CommitTs))
 			binlogReachDurationHistogram.WithLabelValues(p.nodeID).Observe(float64(millisecond) / 1000.0)
@@ -209,11 +213,13 @@ func (p *Pump) createPullBinlogsClient(ctx context.Context, last int64) error {
 	}
 
 	dialOpts := []grpc.DialOption{grpc.WithDefaultCallOptions(callOpts...)}
+	var tlsCredential credentials.TransportCredentials
 	if p.tlsConfig != nil {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(p.tlsConfig)))
+		tlsCredential = credentials.NewTLS(p.tlsConfig)
 	} else {
-		dialOpts = append(dialOpts, grpc.WithInsecure())
+		tlsCredential = insecure.NewCredentials()
 	}
+	dialOpts = append(dialOpts, grpc.WithTransportCredentials(tlsCredential))
 
 	conn, err := grpc.Dial(p.addr, dialOpts...)
 	if err != nil {
