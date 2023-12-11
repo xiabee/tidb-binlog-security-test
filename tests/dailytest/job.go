@@ -143,9 +143,11 @@ func doDDLProcess(table *table, db *sql.DB) {
 	index = randInt(2, len(table.columns)-1)
 	colName := randString(5)
 
+	tp := types.NewFieldType(mysql.TypeVarchar)
+	tp.SetFlen(45)
 	col = &column{
 		name: colName,
-		tp:   types.NewFieldTypeBuilder().SetType(mysql.TypeVarchar).SetFlen(45).BuildP(),
+		tp:   tp,
 	}
 
 	newCols := make([]*column, 0, len(table.columns)+1)

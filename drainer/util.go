@@ -28,13 +28,14 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	bf "github.com/pingcap/tidb-tools/pkg/binlog-filter"
-	baf "github.com/pingcap/tidb-tools/pkg/filter"
-	router "github.com/pingcap/tidb-tools/pkg/table-router"
+	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
+	baf "github.com/pingcap/tidb/util/filter"
+	router "github.com/pingcap/tidb/util/table-router"
 	"github.com/tikv/client-go/v2/oracle"
 	"go.uber.org/zap"
 
@@ -181,7 +182,7 @@ func loadHistoryDDLJobs(tiStore kv.Storage) ([]*model.Job, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	jobs, err := snapMeta.GetAllHistoryDDLJobs()
+	jobs, err := ddl.GetAllHistoryDDLJobs(snapMeta)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -213,22 +214,11 @@ func loadTableInfos(tiStore kv.Storage, startTs int64) ([]*model.Job, error) {
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
-		if len(tableInfos) == 0 {
-			continue
-		}
 		for _, tableInfo := range tableInfos {
 			log.L().Debug("load table info", zap.Stringer("db", dbinfo.Name), zap.Stringer("table", tableInfo.Name), zap.Int64("version", version))
+			jobs = append(jobs, mockCreateTableJob(tableInfo, dbinfo.ID, version))
+			version++
 		}
-		jobs = append(jobs, &model.Job{
-			Type:     model.ActionCreateTables,
-			State:    model.JobStateDone,
-			SchemaID: dbinfo.ID,
-			BinlogInfo: &model.HistoryInfo{
-				SchemaVersion:      version,
-				MultipleTableInfos: tableInfos,
-			},
-		})
-		version++
 	}
 	return jobs, nil
 }
@@ -386,6 +376,18 @@ func mockCreateSchemaJob(dbInfo *model.DBInfo, schemaVersion int64) *model.Job {
 		BinlogInfo: &model.HistoryInfo{
 			SchemaVersion: schemaVersion,
 			DBInfo:        dbInfo,
+		},
+	}
+}
+
+func mockCreateTableJob(tableInfo *model.TableInfo, schemaID, schemaVersion int64) *model.Job {
+	return &model.Job{
+		Type:     model.ActionCreateTable,
+		State:    model.JobStateDone,
+		SchemaID: schemaID,
+		BinlogInfo: &model.HistoryInfo{
+			SchemaVersion: schemaVersion,
+			TableInfo:     tableInfo,
 		},
 	}
 }

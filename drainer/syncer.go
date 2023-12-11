@@ -24,11 +24,11 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	bf "github.com/pingcap/tidb-tools/pkg/binlog-filter"
-	baf "github.com/pingcap/tidb-tools/pkg/filter"
-	router "github.com/pingcap/tidb-tools/pkg/table-router"
 	"github.com/pingcap/tidb/br/pkg/logutil"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/model"
+	baf "github.com/pingcap/tidb/util/filter"
+	router "github.com/pingcap/tidb/util/table-router"
 	"github.com/pingcap/tipb/go-binlog"
 	pb "github.com/pingcap/tipb/go-binlog"
 	"github.com/tikv/client-go/v2/oracle"
@@ -100,6 +100,7 @@ func NewSyncer(cp checkpoint.CheckPoint, cfg *SyncerConfig, jobs []*model.Job) (
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	syncer.schema.InitForCreateMySQLSchema()
 
 	syncer.dsyncer, err = createDSyncer(cfg, syncer.schema, syncer.loopbackSync, syncer.tableRouter)
 	if err != nil {

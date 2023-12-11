@@ -20,6 +20,7 @@ import (
 	"time"
 
 	//nolint
+	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/parser/model"
@@ -29,7 +30,6 @@ import (
 	"github.com/pingcap/tidb/types"
 	pb "github.com/pingcap/tipb/go-binlog"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/pingcap/tidb-binlog/pkg/util"
 )

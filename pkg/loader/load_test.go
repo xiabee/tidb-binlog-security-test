@@ -41,11 +41,11 @@ func (cs *LoadSuite) TearDownTest(c *check.C) {
 
 func (cs *LoadSuite) TestTiFlash(c *check.C) {
 	sql := "ALTER TABLE t SET TIFLASH REPLICA 3 LOCATION LABELS \"rack\", \"host\", \"abc\""
-	res := isSetTiFlashReplica(sql)
+	res := isTiFlashDDL(sql)
 	c.Assert(res, check.IsTrue)
 
 	sql = "create table a(id int)"
-	res = isSetTiFlashReplica(sql)
+	res = isTiFlashDDL(sql)
 	c.Assert(res, check.IsFalse)
 }
 

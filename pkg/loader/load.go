@@ -426,7 +426,7 @@ func (s *loaderImpl) processMysqlDDL(ddl *DDL) error {
 			}
 		}
 
-		sql, err := removeDDLPlacementOptions(ddl.SQL)
+		sql, err := processDDLQuery(ddl.SQL)
 		if err != nil {
 			log.Error("process sql failed", zap.String("sql", sql), zap.Error(err))
 			sql = ddl.SQL
@@ -452,7 +452,7 @@ func (s *loaderImpl) processMysqlDDL(ddl *DDL) error {
 		return nil
 	})
 
-	if err != nil && isSetTiFlashReplica(ddl.SQL) {
+	if err != nil && isTiFlashDDL(ddl.SQL) {
 		return nil
 	}
 
@@ -984,13 +984,17 @@ func getOracleAppliedTS(db *gosql.DB) int64 {
 	return appliedTS
 }
 
-func isSetTiFlashReplica(sql string) bool {
+func isTiFlashDDL(sql string) bool {
+	// We need to ignore all errors related with TiFlash，
+	// Since TiFlash statements are not available in other dbs.
+	// TiFlash related DDL:
+	// alter table xx set tiflash replica xx
+
 	stmt, err := parser.New().ParseOneStmt(sql, "", "")
 	if err != nil {
 		log.Error("failed to parse", zap.Error(err), zap.String("sql", sql))
 		return false
 	}
-
 	n, ok := stmt.(*ast.AlterTableStmt)
 	if !ok {
 		return false

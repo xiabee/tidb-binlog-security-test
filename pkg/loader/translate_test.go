@@ -14,10 +14,10 @@
 package loader
 
 import (
-	router "github.com/pingcap/tidb-tools/pkg/table-router"
 	"github.com/pingcap/tidb/parser/model"
 	ptypes "github.com/pingcap/tidb/parser/types"
 	pb "github.com/pingcap/tidb/tidb-binlog/proto/go-binlog"
+	router "github.com/pingcap/tidb/util/table-router"
 
 	. "github.com/pingcap/check"
 )

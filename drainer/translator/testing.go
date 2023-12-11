@@ -208,50 +208,47 @@ func testGenTable(tt string) *model.TableInfo {
 	t.Name = model.NewCIStr("account")
 
 	// the hard values are from TiDB :-), so just ingore them
+	tp := types.NewFieldType(mysql.TypeLong)
+	tp.SetFlag(mysql.BinaryFlag)
+	tp.SetFlen(11)
+	tp.SetDecimal(-1)
+	tp.SetCharset("binary")
+	tp.SetCollate("binary")
 	userIDCol := &model.ColumnInfo{
-		ID:     1,
-		Name:   model.NewCIStr("ID"),
-		Offset: 0,
-		FieldType: types.NewFieldTypeBuilder().
-			SetType(mysql.TypeLong).
-			SetFlag(mysql.BinaryFlag).
-			SetFlen(11).
-			SetDecimal(-1).
-			SetCharset("binary").
-			SetCollate("binary").
-			Build(),
-		State: model.StatePublic,
+		ID:        1,
+		Name:      model.NewCIStr("ID"),
+		Offset:    0,
+		FieldType: *tp,
+		State:     model.StatePublic,
 	}
 
+	tp = types.NewFieldType(mysql.TypeVarchar)
+	tp.SetFlag(0)
+	tp.SetFlen(45)
+	tp.SetDecimal(-1)
+	tp.SetCharset("utf8")
+	tp.SetCollate("utf8_unicode_ci")
 	userNameCol := &model.ColumnInfo{
-		ID:     2,
-		Name:   model.NewCIStr("NAME"),
-		Offset: 1,
-		FieldType: types.NewFieldTypeBuilder().
-			SetType(mysql.TypeVarchar).
-			SetFlag(0).
-			SetFlen(45).
-			SetDecimal(-1).
-			SetCharset("utf8").
-			SetCollate("utf8_unicode_ci").
-			Build(),
-		State: model.StatePublic,
+		ID:        2,
+		Name:      model.NewCIStr("NAME"),
+		Offset:    1,
+		FieldType: *tp,
+		State:     model.StatePublic,
 	}
 
+	tp = types.NewFieldType(mysql.TypeEnum)
+	tp.SetFlag(mysql.BinaryFlag)
+	tp.SetFlen(-1)
+	tp.SetDecimal(-1)
+	tp.SetCharset("binary")
+	tp.SetCollate("binary")
+	tp.SetElems([]string{"male", "female"})
 	sexCol := &model.ColumnInfo{
-		ID:     3,
-		Name:   model.NewCIStr("SEX"),
-		Offset: 2,
-		FieldType: types.NewFieldTypeBuilder().
-			SetType(mysql.TypeEnum).
-			SetFlag(mysql.BinaryFlag).
-			SetFlen(-1).
-			SetDecimal(-1).
-			SetCharset("binary").
-			SetCollate("binary").
-			SetElems([]string{"male", "female"}).
-			Build(),
-		State: model.StatePublic,
+		ID:        3,
+		Name:      model.NewCIStr("SEX"),
+		Offset:    2,
+		FieldType: *tp,
+		State:     model.StatePublic,
 	}
 
 	t.Columns = []*model.ColumnInfo{userIDCol, userNameCol, sexCol}
@@ -342,7 +339,8 @@ func testGenDatum(c *check.C, col *model.ColumnInfo, base int) (types.Datum, int
 		d.SetBytes([]byte(val))
 		e = []byte(val)
 	case mysql.TypeDuration:
-		duration, err := types.ParseDuration(new(stmtctx.StatementContext), "10:10:10", 0)
+		duration, b, err := types.ParseDuration(new(stmtctx.StatementContext), "10:10:10", 0)
+		c.Assert(b, check.IsFalse)
 		c.Assert(err, check.IsNil)
 		d.SetMysqlDuration(duration)
 		e = "10:10:10"

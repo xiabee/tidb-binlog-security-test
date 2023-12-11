@@ -220,7 +220,7 @@ func getDefaultOrZeroValue(tableInfo *model.TableInfo, col *model.ColumnInfo) ty
 	if col.GetType() == mysql.TypeEnum {
 		// For enum type, if no default value and not null is set,
 		// the default value is the first element of the enum list
-		return types.NewDatum(col.FieldType.GetElems()[0])
+		return types.NewDatum(col.GetElems()[0])
 	}
 
 	return table.GetZeroValue(col)

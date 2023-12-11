@@ -299,17 +299,13 @@ func (s *SQLSuite) TestOracleUpdateSQLCharType(c *check.C) {
 		},
 		UpColumnsInfoMap: map[string]*model.ColumnInfo{
 			"ID": {
-				FieldType: *types.NewFieldType(mysql.TypeInt24),
-			},
+				FieldType: *types.NewFieldType(mysql.TypeInt24)},
 			"NAME": {
-				FieldType: *types.NewFieldType(mysql.TypeVarString),
-			},
+				FieldType: *types.NewFieldType(mysql.TypeVarString)},
 			"OFFER": {
-				FieldType: *types.NewFieldType(mysql.TypeVarString),
-			},
+				FieldType: *types.NewFieldType(mysql.TypeVarString)},
 			"ADDRESS": {
-				FieldType: *types.NewFieldType(mysql.TypeVarString),
-			},
+				FieldType: *types.NewFieldType(mysql.TypeVarString)},
 		},
 		DestDBType: OracleDB,
 	}

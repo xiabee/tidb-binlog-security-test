@@ -24,7 +24,7 @@ import (
 	tmysql "github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/parser/types"
 
-	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-sql-driver/mysql"
 	"github.com/pingcap/check"
 	. "github.com/pingcap/check"
@@ -244,11 +244,9 @@ func (s *singleExecSuite) TestOracleSafeUpdate(c *C) {
 		},
 		UpColumnsInfoMap: map[string]*model.ColumnInfo{
 			"name": {
-				FieldType: *types.NewFieldType(tmysql.TypeString),
-			},
+				FieldType: *types.NewFieldType(tmysql.TypeString)},
 			"age": {
-				FieldType: *types.NewFieldType(tmysql.TypeInt24),
-			},
+				FieldType: *types.NewFieldType(tmysql.TypeInt24)},
 		},
 		DestDBType: OracleDB,
 	}
@@ -319,11 +317,9 @@ func (s *singleExecSuite) TestOracleSafeInsert(c *C) {
 		},
 		UpColumnsInfoMap: map[string]*model.ColumnInfo{
 			"name": {
-				FieldType: *types.NewFieldType(tmysql.TypeString),
-			},
+				FieldType: *types.NewFieldType(tmysql.TypeString)},
 			"age": {
-				FieldType: *types.NewFieldType(tmysql.TypeInt24),
-			},
+				FieldType: *types.NewFieldType(tmysql.TypeInt24)},
 		},
 		DestDBType: OracleDB,
 	}
@@ -381,11 +377,9 @@ func (s *singleExecSuite) TestOracleSafeDelete(c *C) {
 		},
 		UpColumnsInfoMap: map[string]*model.ColumnInfo{
 			"name": {
-				FieldType: *types.NewFieldType(tmysql.TypeString),
-			},
+				FieldType: *types.NewFieldType(tmysql.TypeString)},
 			"age": {
-				FieldType: *types.NewFieldType(tmysql.TypeInt24),
-			},
+				FieldType: *types.NewFieldType(tmysql.TypeInt24)},
 		},
 		DestDBType: OracleDB,
 	}

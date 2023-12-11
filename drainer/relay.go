@@ -3,8 +3,6 @@ package drainer
 import (
 	"database/sql"
 
-	router "github.com/pingcap/tidb-tools/pkg/table-router"
-
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb-binlog/drainer/checkpoint"
@@ -12,6 +10,7 @@ import (
 	"github.com/pingcap/tidb-binlog/drainer/sync"
 	"github.com/pingcap/tidb-binlog/pkg/loader"
 	obinlog "github.com/pingcap/tidb/tidb-binlog/proto/go-binlog"
+	router "github.com/pingcap/tidb/util/table-router"
 	"go.uber.org/zap"
 )
 

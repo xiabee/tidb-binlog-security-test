@@ -17,12 +17,12 @@ import (
 	"fmt"
 
 	//nolint
+	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/check"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/parser/mysql"
 	obinlog "github.com/pingcap/tidb/tidb-binlog/proto/go-binlog"
 	"github.com/pingcap/tidb/types"
-	"google.golang.org/protobuf/proto"
 )
 
 type testKafkaSuite struct {
@@ -153,23 +153,33 @@ func (t *testKafkaSuite) TestGenTable(c *check.C) {
 	// primary key: (c1)
 	// unique key: (c2, c3)
 	// non-unique key: (c3)
+	tp1 := types.NewFieldType(mysql.TypeLong)
+	tp1.SetFlag(mysql.PriKeyFlag)
+	tp1.SetFlen(11)
+	tp1.SetDecimal(1)
+
+	tp2 := types.NewFieldType(mysql.TypeLong)
+	tp2.SetFlen(12)
+	tp2.SetDecimal(2)
+
+	tp3 := types.NewFieldType(mysql.TypeLong)
+	tp3.SetFlen(13)
+	tp3.SetDecimal(3)
+
 	info := &model.TableInfo{
 		Name: model.NewCIStr(table),
 		Columns: []*model.ColumnInfo{
 			{
-				Name: model.NewCIStr("c1"),
-				FieldType: types.NewFieldTypeBuilder().
-					SetFlag(mysql.PriKeyFlag).
-					SetType(mysql.TypeLong).
-					Build(),
+				Name:      model.NewCIStr("c1"),
+				FieldType: *tp1,
 			},
 			{
 				Name:      model.NewCIStr("c2"),
-				FieldType: *types.NewFieldType(mysql.TypeLong),
+				FieldType: *tp2,
 			},
 			{
 				Name:      model.NewCIStr("c3"),
-				FieldType: *types.NewFieldType(mysql.TypeLong),
+				FieldType: *tp3,
 			},
 		},
 		Indices: []*model.IndexInfo{
@@ -219,18 +229,20 @@ func (t *testKafkaSuite) TestGenTable(c *check.C) {
 				Name:         "c1",
 				IsPrimaryKey: true,
 				MysqlType:    "int",
+				Flen:         11,
+				Decimal:      1,
 			},
 			{
 				Name:      "c2",
 				MysqlType: "int",
-				Flen:      types.UnspecifiedLength,
-				Decimal:   types.UnspecifiedLength,
+				Flen:      12,
+				Decimal:   2,
 			},
 			{
 				Name:      "c3",
 				MysqlType: "int",
-				Flen:      types.UnspecifiedLength,
-				Decimal:   types.UnspecifiedLength,
+				Flen:      13,
+				Decimal:   3,
 			},
 		},
 		UniqueKeys: []*obinlog.Key{
