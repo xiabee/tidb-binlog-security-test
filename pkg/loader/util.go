@@ -478,8 +478,7 @@ func getOracleUniqKeys(db *gosql.DB, schema, table string) (uniqueKeys []indexIn
 	return
 }
 
-// processDDLQuery removes placement rules and disable TTL
-func processDDLQuery(sql string) (string, error) {
+func removeDDLPlacementOptions(sql string) (string, error) {
 	stmt, err := parser.New().ParseOneStmt(sql, "", "")
 	if err != nil {
 		return "", err
@@ -495,7 +494,7 @@ func processDDLQuery(sql string) (string, error) {
 	restoreSQL := sb.String()
 
 	sb.Reset()
-	restoreCtx = format.NewRestoreCtx(restoreFlags|format.SkipPlacementRuleForRestore|format.RestoreWithTTLEnableOff, &sb)
+	restoreCtx = format.NewRestoreCtx(restoreFlags|format.SkipPlacementRuleForRestore, &sb)
 	if err = stmt.Restore(restoreCtx); err != nil {
 		return "", err
 	}
