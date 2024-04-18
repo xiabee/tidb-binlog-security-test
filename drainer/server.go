@@ -202,7 +202,7 @@ func createSyncer(etcdURLs string, cp checkpoint.CheckPoint, cfg *SyncerConfig) 
 	defer tiStore.Close()
 
 	var jobs []*model.Job
-	if cfg.LoadSchemaSnapshot {
+	if cfg.LoadTableInfos {
 		jobs, err = loadTableInfos(tiStore, cp.TS())
 	} else {
 		jobs, err = loadHistoryDDLJobs(tiStore)
@@ -281,7 +281,7 @@ func (s *Server) Start() error {
 		}
 	})
 
-	if s.cfg.SyncerCfg != nil && s.cfg.SyncerCfg.LoadSchemaSnapshot {
+	if s.cfg.SyncerCfg != nil && s.cfg.SyncerCfg.LoadTableInfos {
 		s.tg.GoNoPanic("gc_safepoint", func() {
 			defer func() { go s.Close() }()
 			pdCli, err := getPdClient(s.cfg.EtcdURLs, s.cfg.Security)
