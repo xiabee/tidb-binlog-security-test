@@ -54,7 +54,7 @@ func (s *syncerSuite) TestFilterTable(c *check.C) {
 	// append one mutation that will not be dropped
 	var keepID int64 = 2
 	schema.tableIDToName[keepID] = TableName{Schema: "keep", Table: "keep"}
-	pv.Mutations = append(pv.Mutations, pb.TableMutation{TableId: keepID, Sequence: []pb.MutationType{pb.MutationType_Insert}})
+	pv.Mutations = append(pv.Mutations, pb.TableMutation{TableId: keepID})
 
 	ignore, err = skipDMLEvent(pv, schema, filter, nil)
 	c.Assert(err, check.IsNil)
